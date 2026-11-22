@@ -72,6 +72,13 @@ var panels = []panel{
 		Position: panelRight, View: (*app).agentView,
 	},
 	{
+		// A panel of a plugin, drawn by the editor from the tree the
+		// plugin asks for: hidden, and opened by the palette, as a
+		// prototype of what a plugin contributes.
+		ID: "plugin-demo", Name: "插件面板", Title: "插件面板（原型）",
+		Position: panelRight, Hidden: true, View: (*app).pluginDemoPanel,
+	},
+	{
 		ID: "terminal", Name: "终端", Tip: "面板：终端", Icon: terminalIcon, Position: panelBottom,
 		Header: (*app).terminalHeader, View: (*app).terminalView,
 	},

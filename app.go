@@ -191,6 +191,7 @@ type app struct {
 	agentRun                         int
 	agentLines                       []agentLine
 	agentInput                       string
+	pluginDemoClick                  string
 	settingsSection                  string
 	agentAddOpen                     bool
 	agentAddName, agentAddCommand    string

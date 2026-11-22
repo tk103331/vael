@@ -40,6 +40,7 @@ func (a *app) commands() []command {
 		{title: "搜索：项目符号", hint: "查找函数、类型和类", run: a.symbolsCommand},
 		{title: "视图：大纲", hint: "当前文件的结构", run: func() { a.rightSection = "outline"; a.rightPanel = true }},
 		{title: "视图：Agent", hint: "与 Agent 对话", run: func() { a.rightSection = "agent"; a.rightPanel = true }},
+		{title: "视图：插件面板（原型）", hint: "插件用声明式视图树画的界面", run: func() { a.rightSection = "plugin-demo"; a.rightPanel = true }},
 		{title: "任务：运行命令…", hint: "在项目目录中运行命令", run: func() { a.sidebar = true; a.section = "tasks" }},
 		{title: "视图：切换侧栏", hint: "显示或隐藏文件树", run: func() { a.sidebar = !a.sidebar }},
 		{title: "视图：切换终端", hint: "显示或隐藏终端面板", run: func() {
