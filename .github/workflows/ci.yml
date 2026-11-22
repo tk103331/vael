@@ -37,6 +37,24 @@ jobs:
       - name: Test
         run: go test -race ./...
 
+  experiments:
+    name: Test the plugin experiments
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: experiments/plugins
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: experiments/plugins/go.mod
+          cache: true
+          cache-dependency-path: experiments/plugins/go.sum
+      - name: Vet
+        run: go vet ./...
+      - name: Test
+        run: go test ./...
+
   build:
     name: Build the binaries
     runs-on: ubuntu-latest

@@ -110,6 +110,8 @@ go test -race ./...
 
 代码分三块：桌面 UI（根目录，`panel.go` 是面板抽象、`acp.go`／`agent.go` 是 Agent、`log.go` 是 Git 日志）、无界面核心与协议（`internal/core`）、文件与 Git 实现（`internal/workspace`）；核心入口在 `cmd/vael-core`。
 
+插件方案的设计与两种运行时的原型见 [docs/PLUGINS.md](docs/PLUGINS.md) 与 [experiments/plugins](experiments/plugins)：JavaScript（moejs）为主要插件语言，wasm（wazero）为需要编译语言或强隔离的插件，共用一套请求/响应的宿主 API。
+
 ## 许可
 
 MIT。UI、编辑器、差异视图与终端组件来自 [MyGo](https://github.com/egoist/mygo)；GoShell 的配色与界面组织作为参考，其 MIT 声明保留在 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
