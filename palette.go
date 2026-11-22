@@ -34,7 +34,7 @@ func (a *app) commands() []command {
 		{title: "文件：重命名当前文件…", hint: "F2", run: a.renameActiveFile},
 		{title: "搜索：全部替换…", hint: "把项目中的查询全部替换", run: func() { a.sidebar = true; a.section = "search" }},
 		{title: "工作环境：连接…", hint: "SSH、WSL 或 Docker", run: a.showConnectionPrompt},
-		{title: "工作环境：管理与最近项目", hint: "保存的连接配置", run: func() { a.environmentsOpen = true }},
+		{title: "工作环境：管理与最近项目", hint: "保存的连接配置", run: func() { a.settingsOpen = true; a.settingsSection = settingsEnv }},
 		{title: "工作环境：重新连接当前环境", hint: "重建核心通道", run: a.reconnect},
 		{title: "搜索：项目全文搜索", hint: "在项目文件中查找文本", run: func() { a.sidebar = true; a.section = "search" }},
 		{title: "搜索：项目符号", hint: "查找函数、类型和类", run: a.symbolsCommand},

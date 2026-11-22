@@ -42,7 +42,7 @@ func (a *app) saveConnectionProfile(c core.Connection) {
 	a.saveEnvironments()
 }
 func (a *app) openEnvironment(e workspace.Environment) {
-	a.environmentsOpen = false
+	a.settingsOpen = false
 	if e.Kind == "" {
 		a.openProject(e.Root)
 		return
@@ -88,7 +88,8 @@ func (a *app) environmentMenu(c *ui.Context, p palette) {
 		})
 		a.environmentMenuItem(c, p, gearIcon, "管理工作环境…", func() {
 			a.envMenuOpen = false
-			a.environmentsOpen = true
+			a.settingsOpen = true
+			a.settingsSection = settingsEnv
 		})
 	})
 }
@@ -120,71 +121,70 @@ func environmentIcon(kind string) *ui.SVG {
 	}
 }
 
-func (a *app) environmentsDialog(c *ui.Context, p palette) {
-	if !a.environmentsOpen {
-		return
-	}
-	ui.Modal(c, &a.environmentsOpen, func() {
-		ui.Column(c).Width(620).Padding(20).Gap(12).Children(func() {
-			ui.Text(c, "工作环境与最近项目").FontSize(18).FontWeight(650)
-			ui.Scroll(c).FillWidth().MaxHeight(440).Children(func() {
-				ui.Column(c).FillWidth().Gap(5).Children(func() {
-					ui.Text(c, "已保存的配置").FontSize(12).FontWeight(650).TextColor(p.muted)
-					if len(a.environments.Profiles) == 0 {
-						ui.Text(c, "在连接对话框中命名并保存，或收藏当前项目。").FontSize(12).TextColor(p.muted)
-					}
-					for _, profile := range a.environments.Profiles {
-						profile := profile
-						ui.Row(c).FillWidth().Gap(4).Children(func() {
-							a.environmentRow(c, p, profile)
-							if quiet(c, "编辑", false, p) {
-								a.environmentsOpen = false
-								if profile.Kind == "" {
-									a.message = "本地项目可直接从列表打开。"
-								} else {
-									a.profileName = profile.Name
-									a.connectionPrompt = &core.Connection{Kind: profile.Kind, Target: profile.Target, Root: profile.Root, Binary: profile.Binary}
-								}
-							}
-							if quiet(c, "移除", false, p) {
-								a.environments.RemoveProfile(profile.Name)
-								a.saveEnvironments()
-							}
-						})
-					}
-					ui.Divider(c).Margin(6, 0)
-					ui.Text(c, "最近项目").FontSize(12).FontWeight(650).TextColor(p.muted)
-					if len(a.environments.Recent) == 0 {
-						ui.Text(c, "还没有打开过项目").FontSize(12).TextColor(p.muted)
-					}
-					for _, recent := range a.environments.Recent {
-						a.environmentRow(c, p, recent)
-					}
-				})
-			})
-			ui.Row(c).FillWidth().Gap(8).Children(func() {
-				if quiet(c, "新建连接", false, p) {
-					a.environmentsOpen = false
-					a.showConnectionPrompt()
-				}
-				if a.root != "" && quiet(c, "收藏当前项目", false, p) {
-					e := a.currentEnvironment()
-					e.Name = e.Label()
-					a.report(a.environments.SaveProfile(e))
-					a.saveEnvironments()
-				}
-				ui.Spacer(c)
-				if quiet(c, "清空最近记录", false, p) {
-					a.environments.Recent = nil
-					a.saveEnvironments()
-				}
-				if ui.Button(c, "关闭").Clicked() {
-					a.environmentsOpen = false
-				}
-			})
+// environmentsSettings is the remote environments the editor opens
+// projects in: those it saved, and the projects it opened lately.
+func (a *app) environmentsSettings(c *ui.Context, p palette) {
+	ui.Column(c).FillWidth().Gap(10).Children(func() {
+		ui.Text(c, "SSH、WSL 或 Docker：核心在目标环境里运行，文件、命令与终端都在那边。").
+			FontSize(10.5).TextColor(p.muted)
+		ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(8).Children(func() {
+			ui.Text(c, "已保存的环境").FontSize(12).FontWeight(650).TextColor(p.text).Grow(1)
+			if quiet(c, "新建连接…", false, p) {
+				a.settingsOpen = false
+				a.showConnectionPrompt()
+			}
 		})
+		if len(a.environments.Profiles) == 0 {
+			ui.Text(c, "还没有保存的环境：连接时在对话框里命名并保存，或收藏当前环境。").
+				FontSize(11).TextColor(p.muted).Padding(4, 2)
+		}
+		for _, profile := range a.environments.Profiles {
+			profile := profile
+			ui.Row(c).FillWidth().Gap(4).Children(func() {
+				a.environmentRow(c, p, profile)
+				if quiet(c, "编辑", false, p) {
+					if profile.Kind == "" {
+						a.message = "本地项目可直接从列表打开。"
+					} else {
+						a.settingsOpen = false
+						a.profileName = profile.Name
+						a.connectionPrompt = &core.Connection{
+							Kind: profile.Kind, Target: profile.Target,
+							Root: profile.Root, Binary: profile.Binary,
+						}
+					}
+				}
+				if quiet(c, "移除", false, p) {
+					a.environments.RemoveProfile(profile.Name)
+					a.saveEnvironments()
+				}
+			})
+		}
+		ui.Row(c).FillWidth().Children(func() {
+			if a.root != "" && quiet(c, "收藏当前环境", false, p) {
+				environment := a.currentEnvironment()
+				environment.Name = environment.Label()
+				a.report(a.environments.SaveProfile(environment))
+				a.saveEnvironments()
+			}
+		})
+		ui.Divider(c)
+		ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(8).Children(func() {
+			ui.Text(c, "最近项目").FontSize(12).FontWeight(650).TextColor(p.text).Grow(1)
+			if len(a.environments.Recent) > 0 && quiet(c, "清空", false, p) {
+				a.environments.Recent = nil
+				a.saveEnvironments()
+			}
+		})
+		if len(a.environments.Recent) == 0 {
+			ui.Text(c, "还没有打开过项目").FontSize(11).TextColor(p.muted).Padding(4, 2)
+		}
+		for _, recent := range a.environments.Recent {
+			a.environmentRow(c, p, recent)
+		}
 	})
 }
+
 func (a *app) environmentRow(c *ui.Context, p palette, e workspace.Environment) {
 	b := ui.ButtonBase(c).Grow(1).FillWidth().MinWidth(0).Height(48).Padding(6, 8).Radius(5).Label(e.Label())
 	if b.Hovered() {
@@ -192,11 +192,20 @@ func (a *app) environmentRow(c *ui.Context, p palette, e workspace.Environment) 
 	}
 	b.Children(func() {
 		ui.Column(c).FillWidth().Gap(3).Children(func() {
-			ui.Text(c, e.Label()).FontSize(12).FontWeight(550).TextColor(p.text).SingleLine().Ellipsis("…")
-			detail := "本地 · " + e.Root
-			if e.Kind != "" {
-				detail = strings.ToUpper(e.Kind) + " · " + e.Target + " · " + e.Root
+			// A saved environment is known by its name, a project by its
+			// path, which the line under adds what it is opened in.
+			title := e.Name
+			if title == "" {
+				title = e.Root
 			}
+			detail := "本地"
+			if e.Kind != "" {
+				detail = strings.ToUpper(e.Kind) + " · " + e.Target
+				if e.Name != "" {
+					detail += " · " + e.Root
+				}
+			}
+			ui.Text(c, title).FontSize(12).FontWeight(550).TextColor(p.text).SingleLine().Ellipsis("…")
 			ui.Text(c, detail).FontSize(10).TextColor(p.muted).SingleLine().Ellipsis("…")
 		})
 	})

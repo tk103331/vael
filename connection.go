@@ -122,8 +122,10 @@ func (a *app) connectionDialog(c *ui.Context, p palette) {
 		ui.Column(c).Width(500).Padding(22).Gap(14).Children(func() {
 			ui.Text(c, "连接工作环境").FontSize(18).FontWeight(650)
 			if quiet(c, "已保存的环境与最近项目", false, p) {
-				a.environmentsOpen = true
 				open = false
+				a.connectionPrompt = nil
+				a.settingsOpen = true
+				a.settingsSection = settingsEnv
 			}
 			ui.Row(c).Gap(6).Children(func() {
 				for _, kind := range []string{"ssh", "wsl", "docker"} {

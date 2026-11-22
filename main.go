@@ -80,7 +80,7 @@ func (a *app) menus() {
 	menu := mygo.NewMenu([]*mygo.MenuItem{
 		{Role: mygo.RoleAppMenu},
 		{Label: "文件", Submenu: []*mygo.MenuItem{
-			item("工作环境与最近项目…", "", func() { a.environmentsOpen = true }),
+			item("工作环境与最近项目…", "", func() { a.settingsOpen = true; a.settingsSection = settingsEnv }),
 			item("重新连接当前环境", "", a.reconnect),
 			item("连接工作环境…", "CmdOrCtrl+Shift+O", a.showConnectionPrompt),
 			item("快速打开文件…", "CmdOrCtrl+P", func() { a.quickQuery = ""; a.quickOpen = true }),

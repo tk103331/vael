@@ -180,7 +180,8 @@ func (a *app) projectMenu(c *ui.Context, p palette) {
 		ui.Divider(c)
 		menuRow(c, p, globeIcon, "管理工作环境…", "", func() {
 			a.projectMenuOpen = false
-			a.environmentsOpen = true
+			a.settingsOpen = true
+			a.settingsSection = settingsEnv
 		})
 	})
 }

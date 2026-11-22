@@ -1176,7 +1176,6 @@ func (a *app) gitView(c *ui.Context, p palette) {
 }
 func (a *app) dialogs(c *ui.Context, p palette) {
 	a.connectionDialog(c, p)
-	a.environmentsDialog(c, p)
 	if a.prompt != nil {
 		open := true
 		prompt := a.prompt

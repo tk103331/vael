@@ -189,20 +189,20 @@ func TestSavedEnvironmentManager(t *testing.T) {
 	if err := tt.Click("管理工作环境…"); err != nil {
 		t.Fatal(err)
 	}
-	if !a.environmentsOpen {
-		t.Fatal("manager did not open")
+	if !a.settingsOpen || a.settingsSection != settingsEnv {
+		t.Fatalf("the environments did not open in the settings: %v %q", a.settingsOpen, a.settingsSection)
 	}
-	if err := tt.Click("收藏当前项目"); err != nil {
+	if err := tt.Click("收藏当前环境"); err != nil {
 		t.Fatal(err)
 	}
 	if len(a.environments.Profiles) != 2 {
-		t.Fatal("local project was not bookmarked")
+		t.Fatal("the current environment was not saved")
 	}
-	if err := tt.Click("关闭"); err != nil {
+	if err := tt.Click("完成"); err != nil {
 		t.Fatal(err)
 	}
-	if a.environmentsOpen {
-		t.Fatal("manager did not close")
+	if a.settingsOpen {
+		t.Fatal("the settings did not close")
 	}
 	saved, err := workspace.LoadEnvironments(a.environmentsPath)
 	if err != nil || len(saved.Profiles) != 2 {

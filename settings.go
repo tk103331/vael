@@ -13,6 +13,7 @@ import (
 const (
 	settingsLook   = "look"
 	settingsEditor = "editor"
+	settingsEnv    = "env"
 	settingsAgent  = "agent"
 )
 
@@ -30,6 +31,7 @@ func (a *app) settingsView(c *ui.Context, p palette) {
 			ui.Row(c).FillWidth().Gap(2).Children(func() {
 				a.settingsTab(c, p, "外观", settingsLook)
 				a.settingsTab(c, p, "编辑器", settingsEditor)
+				a.settingsTab(c, p, "环境", settingsEnv)
 				a.settingsTab(c, p, "ACP Agent", settingsAgent)
 			})
 			ui.Divider(c)
@@ -38,6 +40,8 @@ func (a *app) settingsView(c *ui.Context, p palette) {
 					switch a.settingsSection {
 					case settingsEditor:
 						a.editorSettings(c, p)
+					case settingsEnv:
+						a.environmentsSettings(c, p)
 					case settingsAgent:
 						a.agentsSettings(c, p)
 					default:

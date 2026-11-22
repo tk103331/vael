@@ -55,7 +55,6 @@ type app struct {
 	connectionError                  string
 	environments                     workspace.Environments
 	environmentsPath                 string
-	environmentsOpen                 bool
 	profileName                      string
 	backend                          *core.Client
 	connection                       *core.Connection
