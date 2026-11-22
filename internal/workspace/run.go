@@ -8,6 +8,8 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+
+	"vael/internal/proc"
 )
 
 // RunResult is what a command left behind: what it printed, and how it ended.
@@ -42,6 +44,14 @@ func RunStream(ctx context.Context, dir, command string, timeout time.Duration, 
 	start := time.Now()
 	cmd := exec.CommandContext(ctx, shell(), shellFlag(), command)
 	cmd.Dir = dir
+	// The command's children go with it when its time is up, and Wait
+	// does not wait on pipes they hold.
+	proc.SetGroup(cmd)
+	cmd.Cancel = func() error {
+		proc.KillGroup(cmd)
+		return nil
+	}
+	cmd.WaitDelay = 2 * time.Second
 	reader, writer := io.Pipe()
 	cmd.Stdout = writer
 	cmd.Stderr = writer

@@ -10,6 +10,8 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+
+	"vael/internal/proc"
 )
 
 // The Agent Client Protocol, as Zed's ACP tells it: the editor starts an
@@ -235,6 +237,8 @@ func startACP(ctx context.Context, command string, handler func(acpMessage)) (*a
 	if err != nil {
 		return nil, err
 	}
+	// The agent and what it starts go away with the editor.
+	proc.SetGroup(cmd)
 	if err := cmd.Start(); err != nil {
 		return nil, err
 	}
@@ -414,8 +418,8 @@ func (c *acpConn) close() {
 	if stdin != nil {
 		_ = stdin.Close()
 	}
-	if c.cmd != nil && c.cmd.Process != nil {
-		_ = c.cmd.Process.Kill()
+	if c.cmd != nil {
+		proc.KillGroup(c.cmd)
 	}
 }
 
