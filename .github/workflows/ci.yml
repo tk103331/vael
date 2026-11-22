@@ -17,8 +17,8 @@ jobs:
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           cache: true
@@ -41,8 +41,8 @@ jobs:
     name: Build the binaries
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           cache: true
@@ -54,7 +54,7 @@ jobs:
           go build -trimpath -o build/vael-core-linux-amd64 ./cmd/vael-core
           GOOS=linux GOARCH=arm64 go build -trimpath -o build/vael-core-linux-arm64 ./cmd/vael-core
           GOOS=windows GOARCH=amd64 go build -trimpath -o build/vael-core-windows-amd64.exe ./cmd/vael-core
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: vael-binaries
           path: build/
