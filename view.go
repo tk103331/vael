@@ -944,7 +944,7 @@ func (a *app) styleEditor(st *editor.State) {
 	st.TabSize = a.tabSize
 	st.Indent = editor.IndentStyle(a.indent)
 	st.Whitespace = editor.Whitespace(a.whitespace)
-	st.LineHeight = a.lineHeight
+	st.LineHeight = a.editorLineHeight()
 	st.NoIndentGuides = !a.guides
 	st.NoAutoClose = !a.autoClose
 	if a.numbers {

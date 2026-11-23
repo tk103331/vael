@@ -60,7 +60,15 @@ func (a *app) drawMinimap(painter *ui.Painter, r ui.Rect, p palette, f *fileTab)
 	}
 	rows := min(minimapRows, count)
 	ink := a.minimapInk(f, rows)
-	step := r.H / float32(rows)
+	// A line is no taller than a few points: a short file shows its shape
+	// at the top of the column rather than a few giant blocks. What the
+	// lines take is what they are mapped to, for the band and for a click.
+	step := min(3, r.H/float32(rows))
+	contentH := step * float32(rows)
+	if contentH <= 0 {
+		return
+	}
+	f.miniContent = contentH
 	height := max(1, step-0.4)
 	for i, line := range ink {
 		if line.width <= 0 {
@@ -78,15 +86,15 @@ func (a *app) drawMinimap(painter *ui.Painter, r ui.Rect, p palette, f *fileTab)
 	if first < 0 || last < first {
 		return
 	}
-	y0 := float32(float64(first) / float64(count) * float64(r.H))
-	y1 := float32(float64(last+1) / float64(count) * float64(r.H))
+	y0 := float32(float64(first) / float64(count) * float64(contentH))
+	y1 := float32(float64(last+1) / float64(count) * float64(contentH))
 	if y1-y0 < 10 {
 		// The band stays big enough to be seen and to be pressed.
 		middle := (y0 + y1) / 2
 		y0, y1 = middle-5, middle+5
 	}
 	y0 = max(0, y0)
-	y1 = min(r.H, y1)
+	y1 = min(contentH, y1)
 	if y1 <= y0 {
 		return
 	}
@@ -101,7 +109,7 @@ func (a *app) drawMinimap(painter *ui.Painter, r ui.Rect, p palette, f *fileTab)
 func (a *app) minimapInk(f *fileTab, rows int) []miniLineInk {
 	buffer := f.state.Buffer
 	version := buffer.Version()
-	if f.miniVersion == version && f.miniRows == rows && f.miniInk != nil {
+	if f.miniBuffer == buffer && f.miniVersion == version && f.miniRows == rows && f.miniInk != nil {
 		return f.miniInk
 	}
 	count := buffer.LineCount()
@@ -134,7 +142,7 @@ func (a *app) minimapInk(f *fileTab, rows int) []miniLineInk {
 			width: float32(width) / minimapCols,
 		}
 	}
-	f.miniVersion, f.miniRows, f.miniInk = version, rows, ink
+	f.miniBuffer, f.miniVersion, f.miniRows, f.miniInk = buffer, version, rows, ink
 	return ink
 }
 
@@ -148,8 +156,12 @@ func (a *app) minimapScroll(f *fileTab, y float32) {
 	if count <= 0 {
 		return
 	}
-	y = max(0, min(f.miniHeight, y))
-	line := int(float64(y) / float64(f.miniHeight) * float64(count))
+	height := min(f.miniHeight, f.miniContent)
+	if height <= 0 {
+		return
+	}
+	y = max(0, min(height, y))
+	line := int(float64(y) / float64(height) * float64(count))
 	first, last := f.state.VisibleLines()
 	visible := last - first + 1
 	if visible < 1 {

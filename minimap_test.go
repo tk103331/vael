@@ -130,3 +130,30 @@ func TestTheMinimapSettingHidesIt(t *testing.T) {
 		t.Fatal("a session without the setting turned the minimap off")
 	}
 }
+
+// TestTheMinimapKeepsShortFilesSmall checks that a few lines draw at the top
+// of the column, a few points each, not as a handful of giant blocks.
+func TestTheMinimapKeepsShortFilesSmall(t *testing.T) {
+	a := newApp()
+	defer a.shutdown()
+	a.root = t.TempDir()
+	a.tabs = []*fileTab{{path: filepath.Join(a.root, "a.go"), state: &editor.State{Buffer: editor.NewBuffer(longText(12)), KeepScrollbars: true}}}
+	a.selected = 0
+	a.sidebar = false
+	a.rightPanel = false
+	a.showBottom = false
+	tt := ui.NewTester(a.view, 951, 940)
+	tt.Frame()
+	tab := a.tabs[0]
+	if tab.miniContent <= 0 || tab.miniContent > 40 {
+		t.Fatalf("the lines take %v of the column", tab.miniContent)
+	}
+	// All the lines are in view: a click at the top of the column leaves
+	// the text where it is.
+	box, _ := tt.Find("缩略图")
+	tt.ClickAt(box.X+box.W/2, box.Y+2)
+	tt.Frame()
+	if first, _ := tab.state.VisibleLines(); first != 0 {
+		t.Fatalf("the click scrolled the short file: %d", first)
+	}
+}

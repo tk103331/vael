@@ -37,10 +37,12 @@ type fileTab struct {
 	// The minimap's ink, read once for the version of the text and the
 	// rows it was read for, and the height it was last drawn at, so that a
 	// click can tell which line it was at.
+	miniBuffer  *editor.Buffer
 	miniVersion uint64
 	miniRows    int
 	miniInk     []miniLineInk
 	miniHeight  float32
+	miniContent float32
 }
 type shellTab struct {
 	term *terminal.Terminal
@@ -651,7 +653,7 @@ func (a *app) openDiff(change workspace.Change, staged bool) {
 			if staged {
 				label = "已暂存"
 			}
-			a.tabs = append(a.tabs, &fileTab{path: change.Path + " · " + label, diff: &editor.DiffState{Old: before, New: after, Layout: editor.DiffSplit, KeepScrollbars: true}})
+			a.tabs = append(a.tabs, &fileTab{path: change.Path + " · " + label, diff: &editor.DiffState{Old: before, New: after, Layout: editor.DiffSplit, KeepScrollbars: true, Font: a.editorFont(), LineHeight: a.editorLineHeight()}})
 			a.selected = len(a.tabs) - 1
 		})
 	}()

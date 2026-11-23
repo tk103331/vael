@@ -38,6 +38,7 @@ func (a *app) applyFontSize() {
 		}
 		if f.diff != nil {
 			f.diff.Font = font
+			f.diff.LineHeight = a.editorLineHeight()
 		}
 	}
 	for _, t := range a.terms {
@@ -224,6 +225,13 @@ func (a *app) breadcrumbOf(c *ui.Context, p palette, f *fileTab) {
 			}
 		}
 	})
+}
+
+// editorLineHeight is the height of the editor's lines as a multiple of the
+// font's size: the settings' percentage (150% unless chosen) is what the
+// editor's LineHeight takes, which is that multiple.
+func (a *app) editorLineHeight() float32 {
+	return a.lineHeightValue() / 100
 }
 
 // fontName is what a family is called in the settings: the system's
