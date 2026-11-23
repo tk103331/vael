@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"math"
 	"strconv"
 	"strings"
 
@@ -24,6 +25,11 @@ type agentLine struct {
 	// Detail is what the tool gave: the words of its output, or the
 	// files its diff touches.
 	Detail string
+	// ToolKind is what kind of tool it is: read, edit, execute, search…
+	ToolKind string
+	// Collapsed says what the line hides until it is clicked: the words
+	// of a thought, or the detail of a tool.
+	Collapsed bool
 }
 
 // acpPending is a request of the agent that waits for the editor to say
@@ -122,6 +128,9 @@ func (a *app) startAgent() {
 			}
 			a.agentConn = conn
 			a.agentSession = session.SessionID
+			a.agentConfig = session.ConfigOptions
+			a.agentModes = session.Modes.AvailableModes
+			a.agentModeID = session.Modes.CurrentModeID
 			a.agentStatus = "已连接"
 			a.agentLines = append(a.agentLines,
 				agentLine{Kind: "note", Text: name + " 已就绪。在项目 " + shortPath(cwd) + " 中工作。"})
@@ -134,15 +143,6 @@ func (a *app) startAgent() {
 					Kind: "note",
 					Text: "这个 Agent 需要先登录（" + strings.Join(names, "、") + "）：在终端运行一次它的登录命令即可。",
 				})
-			}
-			if len(session.Modes.AvailableModes) > 0 {
-				for _, mode := range session.Modes.AvailableModes {
-					if mode.ID == session.Modes.CurrentModeID {
-						a.agentLines = append(a.agentLines, agentLine{
-							Kind: "note", Text: "工作模式：" + mode.Name,
-						})
-					}
-				}
 			}
 		})
 	}()
@@ -165,6 +165,10 @@ func (a *app) stopAgent() {
 	a.agentBusy = false
 	a.agentPending = nil
 	a.agentPlan = nil
+	a.agentConfig = nil
+	a.agentModes = nil
+	a.agentModeID = ""
+	a.agentOptionOpen = ""
 	a.agentStatus = "已停止"
 	if a.agentCancel != nil {
 		a.agentCancel()
@@ -248,16 +252,19 @@ func (a *app) applyAgentUpdate(update acpUpdate) {
 			if a.agentLines[i].Kind == "tool" && a.agentLines[i].ID == update.Update.ToolCallID {
 				a.agentLines[i].Text = toolTitle(update.Update.Title, update.Update.Kind)
 				a.agentLines[i].State = update.Update.Status
+				a.agentLines[i].ToolKind = update.Update.Kind
 				return
 			}
 		}
 		a.agentLines = append(a.agentLines, agentLine{
-			Kind:   "tool",
-			ID:     update.Update.ToolCallID,
-			Text:   toolTitle(update.Update.Title, update.Update.Kind),
-			State:  update.Update.Status,
-			Detail: toolDetail(update.ToolParts(), update.Update.Locations),
+			Kind:     "tool",
+			ID:       update.Update.ToolCallID,
+			Text:     toolTitle(update.Update.Title, update.Update.Kind),
+			State:    update.Update.Status,
+			ToolKind: update.Update.Kind,
+			Detail:   toolDetail(update.ToolParts(), update.Update.Locations),
 		})
+		a.followAgent()
 	case "tool_call_update":
 		for i := range a.agentLines {
 			line := &a.agentLines[i]
@@ -270,9 +277,13 @@ func (a *app) applyAgentUpdate(update acpUpdate) {
 			if update.Update.Status != "" {
 				line.State = update.Update.Status
 			}
+			if update.Update.Kind != "" {
+				line.ToolKind = update.Update.Kind
+			}
 			if detail := toolDetail(update.ToolParts(), update.Update.Locations); detail != "" {
 				line.Detail = detail
 			}
+			a.followAgent()
 			return
 		}
 	case "plan":
@@ -284,10 +295,12 @@ func (a *app) applyAgentUpdate(update acpUpdate) {
 		}
 	case "current_mode_update":
 		if update.Update.CurrentModeID != "" {
-			a.agentLines = append(a.agentLines, agentLine{
-				Kind: "note", Text: "工作模式：" + update.Update.CurrentModeID,
-			})
+			a.agentModeID = update.Update.CurrentModeID
 		}
+	case "config_option_update":
+		// The complete list of the session's selectors, as the agent
+		// changed them itself.
+		a.agentConfig = update.Update.ConfigOptions
 	case "available_commands_update":
 		// The commands an agent offers: none of the panel's doing now.
 	}
@@ -384,14 +397,35 @@ func (a *app) appendAgentLine(kind, text string) {
 	}
 	if n := len(a.agentLines); n > 0 && a.agentLines[n-1].Kind == kind {
 		a.agentLines[n-1].Text += text
+		a.followAgent()
 		return
 	}
-	a.agentLines = append(a.agentLines, agentLine{Kind: kind, Text: text})
+	a.agentLines = append(a.agentLines, agentLine{
+		Kind: kind, Text: text,
+		// What the agent thought is folded away once it is done; the
+		// line in progress shows, as the words come.
+		Collapsed: kind == "thought",
+	})
+	a.followAgent()
+}
+
+// followAgent keeps the conversation at its end, unless the user scrolled
+// away from it, as a chat does while the agent talks.
+func (a *app) followAgent() {
+	if a.agentScroll.MaxY <= 0 || a.agentScroll.Y >= a.agentScroll.MaxY-40 {
+		a.agentScroll.Y = math.MaxFloat32
+	}
 }
 
 // sendToAgent asks the agent what the box holds.
 func (a *app) sendToAgent() {
-	text := strings.TrimSpace(a.agentInput)
+	a.sendAgentText(a.agentInput)
+}
+
+// sendAgentText asks the agent what the words say, as the box and the
+// text area do.
+func (a *app) sendAgentText(text string) {
+	text = strings.TrimSpace(text)
 	if text == "" {
 		return
 	}
@@ -407,6 +441,7 @@ func (a *app) sendToAgent() {
 	a.agentInput = ""
 	a.agentLines = append(a.agentLines, agentLine{Kind: "you", Text: text})
 	a.agentBusy = true
+	a.followAgent()
 	run, conn, session := a.agentRun, a.agentConn, a.agentSession
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() {
@@ -443,7 +478,8 @@ func (a *app) sendToAgent() {
 // once when the user said this kind of tool is always allowed.
 func (a *app) queuePermission(pending acpPending) {
 	ask := pending.ask
-	if option, ok := a.agentAllowed[permissionKey(ask)]; ok {
+	key := permissionKey(ask)
+	if option, ok := a.agentAllowed[key]; ok {
 		if a.agentConn != nil {
 			_ = a.agentConn.reply(pending.id, map[string]any{
 				"outcome": map[string]any{"outcome": "selected", "optionId": option},
@@ -451,6 +487,19 @@ func (a *app) queuePermission(pending acpPending) {
 			a.agentLines = append(a.agentLines, agentLine{
 				Kind: "note", Text: "已允许（此前选择了总是允许）：" + toolTitle(ask.ToolCall.Title, ask.ToolCall.Kind),
 			})
+			a.followAgent()
+		}
+		return
+	}
+	if option, ok := a.agentDenied[key]; ok {
+		if a.agentConn != nil {
+			_ = a.agentConn.reply(pending.id, map[string]any{
+				"outcome": map[string]any{"outcome": "selected", "optionId": option},
+			})
+			a.agentLines = append(a.agentLines, agentLine{
+				Kind: "note", Text: "已拒绝（此前选择了总是拒绝）：" + toolTitle(ask.ToolCall.Title, ask.ToolCall.Kind),
+			})
+			a.followAgent()
 		}
 		return
 	}
@@ -484,8 +533,15 @@ func (a *app) answerAgent(option acpPermissionOption) {
 		}
 		a.agentLines = append(a.agentLines, agentLine{Kind: "note", Text: "已允许：" + title})
 	} else {
+		if option.Kind == "reject_always" && a.agentConn != nil {
+			if a.agentDenied == nil {
+				a.agentDenied = map[string]string{}
+			}
+			a.agentDenied[permissionKey(pending.ask)] = option.OptionID
+		}
 		a.agentLines = append(a.agentLines, agentLine{Kind: "note", Text: "已拒绝：" + title})
 	}
+	a.followAgent()
 	if a.agentConn == nil {
 		return
 	}
@@ -500,14 +556,17 @@ func (a *app) agentView(c *ui.Context, p palette) {
 	ui.Column(c).Fill().Children(func() {
 		a.agentToolbar(c, p)
 		ui.Divider(c)
-		ui.Scroll(c).FillWidth().Grow(1).Children(func() {
+		ui.Scroll(c).FillWidth().Grow(1).TrackScroll(&a.agentScroll).Children(func() {
 			ui.Column(c).FillWidth().Padding(10).Gap(10).Children(func() {
 				if len(a.agentLines) == 0 {
 					a.agentEmptyView(c, p)
 					return
 				}
-				for _, line := range a.agentLines {
-					a.agentLineView(c, p, line)
+				for i := range a.agentLines {
+					a.agentLineView(c, p, &a.agentLines[i], i)
+				}
+				if a.agentBusy {
+					a.agentBusyView(c, p)
 				}
 			})
 		})
@@ -598,6 +657,10 @@ func (a *app) agentMenu(c *ui.Context, p palette) {
 				a.agentChosen = agent.Name
 				a.agentRun++
 				a.agentLines = nil
+				a.agentConfig = nil
+				a.agentModes = nil
+				a.agentModeID = ""
+				a.agentOptionOpen = ""
 				a.agentStatus = ""
 				a.startAgent()
 			}
@@ -652,6 +715,9 @@ func (a *app) restartAgentSession() {
 				return
 			}
 			a.agentSession = session.SessionID
+			a.agentConfig = session.ConfigOptions
+			a.agentModes = session.Modes.AvailableModes
+			a.agentModeID = session.Modes.CurrentModeID
 			a.agentStatus = "已连接"
 			a.agentLines = append(a.agentLines, agentLine{Kind: "note", Text: "已开始新的会话。"})
 		})
@@ -688,7 +754,7 @@ func (a *app) agentEmptyView(c *ui.Context, p palette) {
 
 // agentLineView is one line of the conversation: a bubble of the user,
 // the words of the agent, what it thought, or the tool it ran.
-func (a *app) agentLineView(c *ui.Context, p palette, line agentLine) {
+func (a *app) agentLineView(c *ui.Context, p palette, line *agentLine, index int) {
 	switch line.Kind {
 	case "note", "error":
 		color := p.muted
@@ -696,29 +762,126 @@ func (a *app) agentLineView(c *ui.Context, p palette, line agentLine) {
 			color = p.danger
 		}
 		ui.Text(c, line.Text).FontSize(10.5).TextColor(color)
-		return
 	case "tool":
-		ui.Column(c).FillWidth().Gap(2).Children(func() {
-			ui.Row(c).FillWidth().Gap(6).AlignItems(ui.Center).Children(func() {
-				a.agentMark(c, p, line.State)
-				ui.Text(c, line.Text).FontSize(11).TextColor(p.text).Grow(1).SingleLine().Ellipsis("…")
-				if status := toolStatus(line.State); status != "" {
-					ui.Text(c, status).FontSize(9.5).TextColor(p.muted)
-				}
-			})
-			if line.Detail != "" {
-				for _, row := range strings.Split(line.Detail, "\n") {
-					ui.Text(c, row).FontSize(10).TextColor(p.muted).Padding(0, 0, 0, 18).
-						SingleLine().Ellipsis("…")
-				}
+		a.agentToolView(c, p, line)
+	case "thought":
+		a.agentThoughtView(c, p, line, index)
+	case "you":
+		a.agentMessageView(c, p, line.Text, true)
+	default:
+		a.agentMessageView(c, p, line.Text, false)
+	}
+}
+
+// agentThoughtView is what the agent thought before it answered: a folded
+// line, which shows as it comes, until it is done or clicked.
+func (a *app) agentThoughtView(c *ui.Context, p palette, line *agentLine, index int) {
+	// The thought in progress shows while the agent is busy; once it is
+	// done, it folds away unless the user opened it.
+	open := !line.Collapsed
+	if a.agentBusy && index == len(a.agentLines)-1 {
+		open = true
+	}
+	ui.Column(c).FillWidth().BorderWidth(0, 0, 0, 2).BorderColor(p.edge).
+		Padding(2, 8).Gap(3).Children(func() {
+		header := ui.ButtonBase(c).FillWidth().Height(20).Gap(4).AlignItems(ui.Center).Label("思考过程")
+		if header.Hovered() {
+			header.Background(p.edge)
+		}
+		header.Children(func() {
+			icon := chevronDownIcon
+			if !open {
+				icon = chevronRightIcon
+			}
+			ui.Icon(c, icon).Size(8, 8).TextColor(p.muted)
+			ui.Text(c, "思考").FontSize(10).TextColor(p.muted)
+			ui.Textf(c, "%d 字", len([]rune(line.Text))).FontSize(9).TextColor(p.muted)
+			if !open {
+				ui.Text(c, firstLine(line.Text, 80)).FontSize(9.5).TextColor(p.muted).Grow(1).
+					SingleLine().Ellipsis("…")
 			}
 		})
-		return
-	case "thought":
-		ui.Text(c, line.Text).FontSize(11).TextColor(p.muted)
-		return
+		if header.Clicked() {
+			line.Collapsed = !line.Collapsed
+		}
+		if open {
+			ui.Text(c, line.Text).FontSize(10.5).TextColor(p.muted).LineHeight(1.45)
+		}
+	})
+}
+
+// agentToolView is a tool the agent ran: what it was, how it did, and what
+// it gave.
+func (a *app) agentToolView(c *ui.Context, p palette, line *agentLine) {
+	hasDetail := strings.TrimSpace(line.Detail) != ""
+	ui.Column(c).FillWidth().Background(p.wash).Radius(5).Padding(5, 8).Gap(2).Children(func() {
+		header := ui.ButtonBase(c).FillWidth().Height(22).Gap(5).AlignItems(ui.Center).Label(line.Text)
+		if header.Hovered() {
+			header.Background(p.edge)
+		}
+		header.Children(func() {
+			ui.Icon(c, toolKindIcon(line.ToolKind)).Size(11, 11).TextColor(p.muted)
+			ui.Text(c, line.Text).FontSize(11).TextColor(p.text).Grow(1).SingleLine().Ellipsis("…")
+			if status := toolStatus(line.State); status != "" {
+				color := p.muted
+				switch line.State {
+				case "completed":
+					color = p.success
+				case "failed":
+					color = p.danger
+				case "in_progress":
+					color = p.accent
+				}
+				ui.Text(c, status).FontSize(9).TextColor(color)
+			}
+			if hasDetail {
+				icon := chevronDownIcon
+				if line.Collapsed {
+					icon = chevronRightIcon
+				}
+				ui.Icon(c, icon).Size(8, 8).TextColor(p.muted)
+			}
+		})
+		if header.Clicked() && hasDetail {
+			line.Collapsed = !line.Collapsed
+		}
+		if hasDetail && !line.Collapsed {
+			for _, row := range strings.Split(line.Detail, "\n") {
+				ui.Text(c, row).FontSize(9.5).TextColor(p.muted).Font("monospace").
+					LineHeight(1.4).Padding(0, 0, 0, 16)
+			}
+		}
+	})
+}
+
+// toolKindIcon is the mark of a kind of tool, as the protocol names it.
+func toolKindIcon(kind string) *ui.SVG {
+	switch kind {
+	case "read":
+		return fileIcon
+	case "edit":
+		return pencilIcon
+	case "delete":
+		return trashIcon
+	case "move":
+		return filesIcon
+	case "search":
+		return searchIcon
+	case "execute":
+		return terminalIcon
+	case "think":
+		return agentIcon
+	case "fetch":
+		return globeIcon
+	case "switch_mode":
+		return repeatIcon
 	}
-	mine := line.Kind == "you"
+	return taskIcon
+}
+
+// agentMessageView is what the user or the agent said, the user's in a
+// bubble at the right, the agent's as running text.
+func (a *app) agentMessageView(c *ui.Context, p palette, text string, mine bool) {
 	label := "Agent"
 	if mine {
 		label = "你"
@@ -729,22 +892,147 @@ func (a *app) agentLineView(c *ui.Context, p palette, line agentLine) {
 				ui.Box(c).Grow(1)
 			}
 			ui.Text(c, label).FontSize(10).FontWeight(650).TextColor(p.muted)
-			if mine {
-				return
-			}
 		})
+		if !mine {
+			a.agentMarkdown(c, p, text, 11.5, p.text)
+			return
+		}
 		ui.Row(c).FillWidth().Children(func() {
-			if mine {
-				ui.Box(c).Grow(1)
-			}
+			ui.Box(c).Grow(1)
 			ui.Box(c).MaxWidthPercent(88).Padding(8, 10).Radius(6).
 				Background(p.edge).Children(func() {
-				ui.Text(c, line.Text).FontSize(11.5).TextColor(p.text)
+				a.agentMarkdown(c, p, text, 11.5, p.text)
 			})
-			if !mine {
-				ui.Box(c).Grow(1)
-			}
 		})
+	})
+}
+
+// agentMarkdown draws what the agent says: its prose, its lists, and its
+// code, which stands apart in a block of its own.
+func (a *app) agentMarkdown(c *ui.Context, p palette, text string, size float32, color ui.Color) {
+	for _, block := range splitAgentText(text) {
+		block := block
+		if block.code {
+			ui.Column(c).FillWidth().Background(p.wash).Radius(5).Padding(6, 8).Gap(2).Children(func() {
+				if block.lang != "" {
+					ui.Text(c, block.lang).FontSize(9).TextColor(p.muted)
+				}
+				ui.Text(c, block.text).Font("monospace").FontSize(size - 1).
+					TextColor(p.text).LineHeight(1.4)
+			})
+			continue
+		}
+		if strings.TrimSpace(block.text) == "" {
+			continue
+		}
+		ui.RichText(c, agentSpans(block.text, size, color, p)...).FillWidth()
+	}
+}
+
+// agentBlock is a part of what the agent says: its words, or code.
+type agentBlock struct {
+	code bool
+	lang string
+	text string
+}
+
+// splitAgentText cuts what the agent says into prose and fenced code.
+func splitAgentText(text string) []agentBlock {
+	lines := strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n")
+	var blocks []agentBlock
+	var prose []string
+	flush := func() {
+		if len(prose) > 0 {
+			blocks = append(blocks, agentBlock{text: strings.Join(prose, "\n")})
+			prose = nil
+		}
+	}
+	for i := 0; i < len(lines); i++ {
+		if fence := strings.TrimSpace(lines[i]); strings.HasPrefix(fence, "```") {
+			flush()
+			lang := strings.TrimSpace(strings.TrimPrefix(fence, "```"))
+			var code []string
+			for i++; i < len(lines); i++ {
+				if strings.HasPrefix(strings.TrimSpace(lines[i]), "```") {
+					break
+				}
+				code = append(code, lines[i])
+			}
+			blocks = append(blocks, agentBlock{code: true, lang: lang, text: strings.Join(code, "\n")})
+			continue
+		}
+		prose = append(prose, lines[i])
+	}
+	flush()
+	return blocks
+}
+
+// agentSpans reads the words of a message: `code` in a monospace chip, and
+// **bold** heavy.
+func agentSpans(text string, size float32, color ui.Color, p palette) []ui.Span {
+	var spans []ui.Span
+	plain := func(part string) {
+		for len(part) > 0 {
+			open := strings.Index(part, "**")
+			if open < 0 {
+				spans = append(spans, ui.Span{Text: part, Size: size, Color: color})
+				return
+			}
+			close := strings.Index(part[open+2:], "**")
+			if close < 0 {
+				spans = append(spans, ui.Span{Text: part, Size: size, Color: color})
+				return
+			}
+			if open > 0 {
+				spans = append(spans, ui.Span{Text: part[:open], Size: size, Color: color})
+			}
+			spans = append(spans, ui.Span{
+				Text: part[open+2 : open+2+close], Size: size, Color: color, Weight: 650,
+			})
+			part = part[open+2+close+2:]
+		}
+	}
+	for len(text) > 0 {
+		at := strings.IndexByte(text, '`')
+		if at < 0 {
+			plain(text)
+			break
+		}
+		if at > 0 {
+			plain(text[:at])
+		}
+		rest := text[at+1:]
+		close := strings.IndexByte(rest, '`')
+		if close < 0 {
+			plain(text[at:])
+			break
+		}
+		if code := rest[:close]; code != "" {
+			spans = append(spans, ui.Span{
+				Text: code, Size: size - 0.5, Font: "monospace", Color: color,
+				Background: p.wash, Radius: 3, PaddingX: 3,
+			})
+		}
+		text = rest[close+1:]
+	}
+	return spans
+}
+
+// agentBusyView says what the agent is doing, after the last line.
+func (a *app) agentBusyView(c *ui.Context, p palette) {
+	label := "正在回答…"
+	if n := len(a.agentLines); n > 0 {
+		last := a.agentLines[n-1]
+		switch {
+		case last.Kind == "thought":
+			label = "正在思考…"
+		case last.Kind == "tool" && (last.State == "pending" || last.State == "in_progress"):
+			label = "正在运行工具…"
+		}
+	}
+	ui.Row(c).FillWidth().Gap(6).AlignItems(ui.Center).Children(func() {
+		ui.Box(c).Size(6, 6).Radius(3).Background(p.accent)
+		ui.Text(c, label).FontSize(10).TextColor(p.muted)
 	})
 }
 
@@ -822,41 +1110,103 @@ func (a *app) agentPermissionView(c *ui.Context, p palette) {
 		return
 	}
 	ask := a.agentPending[0].ask
-	ui.Column(c).FillWidth().Padding(8, 10).Gap(6).Background(p.warnSoft).Children(func() {
+	ui.Column(c).FillWidth().Padding(8, 10).Gap(5).Background(p.warnSoft).Children(func() {
 		ui.Row(c).FillWidth().Gap(6).AlignItems(ui.Center).Children(func() {
-			ui.Icon(c, alertIcon).Size(12, 12).TextColor(p.warn)
+			ui.Icon(c, toolKindIcon(ask.ToolCall.Kind)).Size(12, 12).TextColor(p.warn)
 			ui.Text(c, "Agent 请求允许："+toolTitle(ask.ToolCall.Title, ask.ToolCall.Kind)).
 				FontSize(11).TextColor(p.text).Grow(1).SingleLine().Ellipsis("…")
 		})
+		if command := permissionCommand(ask.ToolCall.RawInput); command != "" {
+			ui.Text(c, firstLines(command, 3)).FontSize(9.5).TextColor(p.muted).
+				Font("monospace").Padding(0, 0, 0, 16)
+		}
 		ui.Row(c).FillWidth().Wrap().Gap(6).Children(func() {
 			for _, option := range ask.Options {
 				option := option
-				if strings.HasPrefix(option.Kind, "allow") {
+				switch {
+				case option.Kind == "allow_once":
 					if ui.PrimaryButton(c, option.Name).Clicked() {
 						a.answerAgent(option)
 					}
-					continue
-				}
-				if quiet(c, option.Name, false, p) {
-					a.answerAgent(option)
+				case strings.HasPrefix(option.Kind, "allow"):
+					if ui.Button(c, option.Name).Clicked() {
+						a.answerAgent(option)
+					}
+				default:
+					if quiet(c, option.Name, false, p) {
+						a.answerAgent(option)
+					}
 				}
 			}
 		})
 		if len(a.agentPending) > 1 {
-			ui.Textf(c, "还有 %d 个请求在等待。", len(a.agentPending)-1).
+			ui.Textf(c, "Agent 还在等你回答另外 %d 个请求。", len(a.agentPending)-1).
+				FontSize(9.5).TextColor(p.muted)
+		} else {
+			ui.Text(c, "Agent 在这一步等你回答。").
 				FontSize(9.5).TextColor(p.muted)
 		}
 	})
 }
 
-// agentComposer is the box that asks the agent something.
+// permissionCommand is the command a permission asks for, when it holds
+// one: agents put it in rawInput, as words or a field.
+func permissionCommand(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var words string
+	if json.Unmarshal(raw, &words) == nil {
+		return strings.TrimSpace(words)
+	}
+	var body struct {
+		Command string `json:"command"`
+		Cmd     string `json:"cmd"`
+	}
+	if json.Unmarshal(raw, &body) != nil {
+		return ""
+	}
+	if body.Command != "" {
+		return body.Command
+	}
+	return body.Cmd
+}
+
+// agentComposer is the box that asks the agent something: its session's
+// selectors, the words, and the send that ends them.
 func (a *app) agentComposer(c *ui.Context, p palette) {
 	ui.Column(c).FillWidth().Padding(8).Gap(6).Children(func() {
-		input := ui.TextInput(c, &a.agentInput).FillWidth().Height(28).Padding(2, 6).
-			Placeholder("询问 Agent…").Label("Agent 输入")
+		if len(a.agentConfig) > 0 || len(a.agentModes) > 0 {
+			a.agentConfigBar(c, p)
+		}
+		input := ui.TextArea(c, &a.agentInput).FillWidth().Lines(1, 6).
+			Padding(4, 6).Placeholder("询问 Agent…").Label("Agent 输入")
+		input.OnTextKey(func(k ui.TextKey) bool {
+			// Enter sends; Shift+Enter breaks the line.
+			if k.Key != ui.KeyEnter || k.Mods != 0 || a.agentBusy {
+				return false
+			}
+			text := k.Text()
+			a.sendAgentText(text)
+			if strings.TrimSpace(text) != "" && a.agentConn != nil {
+				k.SetText("")
+			}
+			return true
+		})
 		submitted := input.Submitted()
 		ui.Row(c).FillWidth().Gap(6).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, "Enter 发送").FontSize(10).TextColor(p.muted).Grow(1)
+			hint := "Enter 发送 · Shift+Enter 换行"
+			if a.agentConn == nil {
+				hint = "先启动 Agent 才能发送"
+			} else if a.agentBusy {
+				hint = "等这一轮结束，或取消它"
+			}
+			ui.Text(c, hint).FontSize(9.5).TextColor(p.muted).Grow(1).SingleLine().Ellipsis("…")
+			if a.agentBusy {
+				if smallIconButton(c, stopIcon, "取消本轮", p) {
+					a.cancelAgentPrompt()
+				}
+			}
 			disabled := a.agentConn == nil || a.agentBusy || strings.TrimSpace(a.agentInput) == ""
 			if ui.PrimaryButton(c, "发送").Disabled(disabled).Clicked() || submitted {
 				a.sendToAgent()

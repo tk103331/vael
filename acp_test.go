@@ -20,6 +20,24 @@ func TestACPAgentHelper(t *testing.T) {
 	out := os.Stdout
 	const permissionID = 100
 	promptID := 0
+	model, mode := "fast", "ask"
+	thinking := false
+	configs := func() []any {
+		return []any{
+			map[string]any{"id": "model", "name": "模型", "category": "model", "type": "select",
+				"currentValue": model, "options": []any{
+					map[string]any{"value": "fast", "name": "Fast"},
+					map[string]any{"value": "smart", "name": "Smart", "description": "更慢，更准"},
+				}},
+			map[string]any{"id": "mode", "name": "模式", "category": "mode", "type": "select",
+				"currentValue": mode, "options": []any{
+					map[string]any{"value": "ask", "name": "Ask"},
+					map[string]any{"value": "code", "name": "Code"},
+				}},
+			map[string]any{"id": "thinking", "name": "思考", "category": "thought_level",
+				"type": "boolean", "currentValue": thinking},
+		}
+	}
 	write := func(message map[string]any) {
 		data, _ := json.Marshal(message)
 		out.Write(append(data, '\n'))
@@ -57,8 +75,61 @@ func TestACPAgentHelper(t *testing.T) {
 		case "session/new":
 			write(map[string]any{
 				"jsonrpc": "2.0", "id": *message.ID,
-				"result": map[string]any{"sessionId": "s1"},
+				"result": map[string]any{
+					"sessionId":     "s1",
+					"configOptions": configs(),
+					"modes": map[string]any{
+						"currentModeId": mode,
+						"availableModes": []any{
+							map[string]any{"id": "ask", "name": "Ask", "description": "问一问"},
+							map[string]any{"id": "code", "name": "Code", "description": "直接改"},
+						},
+					},
+				},
 			})
+		case "session/set_config_option":
+			var params struct {
+				ConfigID string          `json:"configId"`
+				Value    json.RawMessage `json:"value"`
+			}
+			json.Unmarshal(message.Params, &params)
+			switch params.ConfigID {
+			case "model":
+				var words string
+				if json.Unmarshal(params.Value, &words) == nil {
+					model = words
+				}
+			case "mode":
+				var words string
+				if json.Unmarshal(params.Value, &words) == nil {
+					mode = words
+				}
+			case "thinking":
+				var on bool
+				if json.Unmarshal(params.Value, &on) == nil {
+					thinking = on
+				}
+			}
+			write(map[string]any{
+				"jsonrpc": "2.0", "id": *message.ID,
+				"result": map[string]any{"configOptions": configs()},
+			})
+		case "session/set_mode":
+			var params struct {
+				ModeID string `json:"modeId"`
+			}
+			json.Unmarshal(message.Params, &params)
+			if params.ModeID != "" {
+				mode = params.ModeID
+			}
+			write(map[string]any{
+				"jsonrpc": "2.0", "method": "session/update",
+				"params": map[string]any{
+					"sessionId": "s1",
+					"update":    map[string]any{"sessionUpdate": "current_mode_update", "currentModeId": mode},
+				},
+			})
+			write(map[string]any{"jsonrpc": "2.0", "id": *message.ID, "result": map[string]any{}})
 		case "session/prompt":
 			if promptWantsTool(message.Params) {
 				// A tool, its output, a plan, and a request for what the

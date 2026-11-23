@@ -59,15 +59,98 @@ type acpInitialize struct {
 // acpSession is the answer to a new session.
 type acpSession struct {
 	SessionID string `json:"sessionId"`
-	// Modes are the ways the agent can be told to work, as the modes of
-	// an agent that edits files of its own accord.
+	// ConfigOptions are the selectors the agent offers for the session:
+	// its model, its mode, how much it thinks, and more.
+	ConfigOptions []acpConfigOption `json:"configOptions"`
+	// Modes are the ways the agent can be told to work, before session
+	// config options replaced them.
 	Modes struct {
-		CurrentModeID  string `json:"currentModeId"`
-		AvailableModes []struct {
-			ID   string `json:"id"`
-			Name string `json:"name"`
-		} `json:"availableModes"`
+		CurrentModeID  string    `json:"currentModeId"`
+		AvailableModes []acpMode `json:"availableModes"`
 	} `json:"modes"`
+}
+
+// acpMode is a way an agent of the older protocol can be told to work.
+type acpMode struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+}
+
+// acpConfigOption is a selector an agent offers for a session, as its
+// model or its mode: a choice among values, or a switch.
+// https://agentclientprotocol.com/protocol/v1/session-config-options
+type acpConfigOption struct {
+	ID           string            `json:"id"`
+	Name         string            `json:"name"`
+	Description  string            `json:"description"`
+	Category     string            `json:"category"` // model, mode, model_config, thought_level
+	Type         string            `json:"type"`     // select, or boolean
+	CurrentValue json.RawMessage   `json:"currentValue"`
+	Options      []acpConfigChoice `json:"options"`
+}
+
+// acpConfigChoice is one value of a selector.
+type acpConfigChoice struct {
+	Value       string `json:"value"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+}
+
+// Value reads a selector's current value as words, and Bool as a switch.
+func (o acpConfigOption) Value() string {
+	var words string
+	if json.Unmarshal(o.CurrentValue, &words) == nil {
+		return words
+	}
+	return ""
+}
+
+// Bool reads a selector's current value as a switch.
+func (o acpConfigOption) Bool() bool {
+	var on bool
+	_ = json.Unmarshal(o.CurrentValue, &on)
+	return on
+}
+
+// IsBoolean tells whether a selector is a switch rather than a choice.
+func (o acpConfigOption) IsBoolean() bool {
+	return o.Type == "boolean"
+}
+
+// IsModel tells whether an option chooses the model, as the protocol's
+// category says, or as agents that only name it do.
+func (o acpConfigOption) IsModel() bool {
+	return o.Category == "model" || (o.Category == "" && o.ID == "model")
+}
+
+// CurrentName is the name of the value a selector is on.
+func (o acpConfigOption) CurrentName() string {
+	if o.IsBoolean() {
+		if o.Bool() {
+			return "开"
+		}
+		return "关"
+	}
+	value := o.Value()
+	for _, choice := range o.Options {
+		if choice.Value == value {
+			if choice.Name != "" {
+				return choice.Name
+			}
+			return choice.Value
+		}
+	}
+	if value == "" {
+		return "—"
+	}
+	return value
+}
+
+// setConfigResult is what the agent answers when an option changes: the
+// complete list, as options depend on each other.
+type setConfigResult struct {
+	ConfigOptions []acpConfigOption `json:"configOptions"`
 }
 
 // acpPromptResult is how a turn of the conversation ended.
@@ -152,6 +235,9 @@ type acpUpdate struct {
 		RawInput   any           `json:"rawInput"`
 		// The mode the agent works in, when the update says it.
 		CurrentModeID string `json:"currentModeId"`
+		// ConfigOptions are the session's selectors, as the agent changes
+		// them itself.
+		ConfigOptions []acpConfigOption `json:"configOptions"`
 	} `json:"update"`
 }
 
@@ -184,9 +270,10 @@ func (u acpUpdate) ToolParts() []acpToolContent {
 type acpPermission struct {
 	SessionID string `json:"sessionId"`
 	ToolCall  struct {
-		ToolCallID string `json:"toolCallId"`
-		Title      string `json:"title"`
-		Kind       string `json:"kind"`
+		ToolCallID string          `json:"toolCallId"`
+		Title      string          `json:"title"`
+		Kind       string          `json:"kind"`
+		RawInput   json.RawMessage `json:"rawInput"`
 	} `json:"toolCall"`
 	Options []acpPermissionOption `json:"options"`
 }

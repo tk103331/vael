@@ -239,6 +239,12 @@ type app struct {
 	agentAddOpen                     bool
 	agentAddName, agentAddCommand    string
 	agentRegistryOpen                bool
+	agentConfig                      []acpConfigOption
+	agentModes                       []acpMode
+	agentModeID                      string
+	agentOptionOpen                  string
+	agentDenied                      map[string]string
+	agentScroll                      ui.ScrollState
 	registry                         []acpRegistryAgent
 	registryErr                      string
 	registryLoading                  bool
