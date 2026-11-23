@@ -252,6 +252,7 @@ type app struct {
 	registryStatus                   map[string]string
 	registryHas                      map[string]bool
 	registryRun                      int
+	treeScroll                       ui.ScrollState
 	branchFrom, branchName           string
 	logPattern                       *regexp.Regexp
 	logPatternKey                    string

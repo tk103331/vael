@@ -686,7 +686,7 @@ func (a *app) filesHeader(c *ui.Context, p palette) {
 // filesView is the files panel: the filter and the tree of the project.
 func (a *app) filesView(c *ui.Context, p palette) {
 	ui.TextInput(c, &a.filter).FillWidth().Placeholder("筛选已加载的文件…")
-	ui.ScrollBoth(c).FillWidth().Grow(1).Children(func() {
+	ui.ScrollBoth(c).FillWidth().Grow(1).TrackScroll(&a.treeScroll).Children(func() {
 		// The tree takes the room its widest row needs, and the scroll
 		// shows the part the panel cannot. A grid of one track keeps
 		// that width, which the rows fill.
@@ -707,7 +707,10 @@ func (a *app) treeWidth(c *ui.Context, dir string, depth int) float32 {
 			continue
 		}
 		name, _ := c.MeasureText(0, ui.Span{Text: e.Name, Size: 12})
-		width = max(width, float32(8+depth*13)+name+40)
+		// The indent, the name, the icons before it, and a little room:
+		// the name is shown whole, and the scroll shows the part of a
+		// long one the panel cannot.
+		width = max(width, float32(8+depth*13)+name+44)
 		if e.Dir && a.expanded[e.Path] {
 			width = max(width, a.treeWidth(c, e.Path, depth+1))
 		}
@@ -729,7 +732,7 @@ func (a *app) tree(c *ui.Context, p palette, dir string, depth int, width float3
 		e := e
 		left := float32(8 + depth*13)
 		row := ui.ButtonBase(c).Width(width).Height(28).Radius(6).
-			Padding(0, left).AlignItems(ui.Center).Label(e.Name)
+			Padding(0, 8, 0, left).AlignItems(ui.Center).Label(e.Name)
 		active := a.active()
 		if active != nil && active.path == e.Path {
 			row.Background(p.selected)
@@ -744,13 +747,13 @@ func (a *app) tree(c *ui.Context, p palette, dir string, depth int, width float3
 				}
 				ui.Icon(c, chevron).Size(10, 10).TextColor(p.muted)
 				ui.Icon(c, folderIcon).Size(13, 13).TextColor(p.accent)
-				ui.Text(c, e.Name).FontSize(12).TextColor(p.text).Grow(1).SingleLine().Ellipsis("…")
+				ui.Text(c, e.Name).FontSize(12).TextColor(p.text).Grow(1).SingleLine()
 			} else {
 				nameColor, tip := a.treeColor(e.Path, p)
 				ui.Box(c).Width(22).Children(func() {
 					a.markView(c, p, a.markFor(e.Name))
 				})
-				name := ui.Text(c, e.Name).FontSize(12).TextColor(nameColor).Grow(1).SingleLine().Ellipsis("…")
+				name := ui.Text(c, e.Name).FontSize(12).TextColor(nameColor).Grow(1).SingleLine()
 				if tip != "" {
 					name.Tooltip(e.Name + " · " + tip)
 				}
