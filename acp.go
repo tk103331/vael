@@ -6,8 +6,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"runtime"
+	"sort"
 	"strings"
 	"sync"
 
@@ -217,13 +219,33 @@ type acpConn struct {
 	handler func(acpMessage)
 }
 
+// agentEnv is the environment an agent starts with: the editor's, and
+// what the registry asks of it, the registry's last.
+func agentEnv(base []string, env map[string]string) []string {
+	out := append([]string{}, base...)
+	keys := make([]string, 0, len(env))
+	for key := range env {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		out = append(out, key+"="+env[key])
+	}
+	return out
+}
+
 // startACP runs an agent, and starts reading what it says.
-func startACP(ctx context.Context, command string, handler func(acpMessage)) (*acpConn, error) {
+func startACP(ctx context.Context, command string, env map[string]string, handler func(acpMessage)) (*acpConn, error) {
 	var cmd *exec.Cmd
 	if runtime.GOOS == "windows" {
 		cmd = exec.CommandContext(ctx, "cmd", "/c", command)
 	} else {
 		cmd = exec.CommandContext(ctx, "sh", "-c", command)
+	}
+	if len(env) > 0 {
+		// The environment of the agent is the editor's, and what the
+		// registry asks of it.
+		cmd.Env = agentEnv(os.Environ(), env)
 	}
 	stdin, err := cmd.StdinPipe()
 	if err != nil {

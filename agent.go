@@ -33,17 +33,6 @@ type acpPending struct {
 	ask acpPermission
 }
 
-// acpRegistry are the agents the settings offer, as the ACP registry
-// names them. The commands are a starting point: the user can change
-// them, and add an agent of their own.
-var acpRegistry = []workspace.Agent{
-	{Name: "Gemini CLI", Command: "gemini --experimental-acp"},
-	{Name: "Claude Code", Command: "npx -y @zed-industries/claude-code-acp"},
-	{Name: "Qwen Code", Command: "qwen --experimental-acp"},
-	{Name: "Goose", Command: "goose acp"},
-	{Name: "Codex CLI", Command: "npx -y @zed-industries/codex-acp"},
-}
-
 // loadAgents reads the agents the editor starts, and the one it starts by
 // default.
 func (a *app) loadAgents() {
@@ -87,7 +76,7 @@ func (a *app) startAgent() {
 		agentLine{Kind: "note", Text: "启动 " + chosen.Name + "…"})
 	name, command, cwd := chosen.Name, chosen.Command, a.root
 	go func() {
-		conn, err := startACP(ctx, command, func(message acpMessage) { a.incomingAgent(run, message) })
+		conn, err := startACP(ctx, command, chosen.Env, func(message acpMessage) { a.incomingAgent(run, message) })
 		if err != nil {
 			a.update(func() {
 				if run != a.agentRun {

@@ -159,7 +159,7 @@ func TestACPConnSpeaks(t *testing.T) {
 	defer cancel()
 	updates := make(chan acpUpdate, 4)
 	command := "VAEL_ACP_AGENT=1 " + os.Args[0] + " -test.run=TestACPAgentHelper"
-	conn, err := startACP(ctx, command, func(message acpMessage) {
+	conn, err := startACP(ctx, command, nil, func(message acpMessage) {
 		if message.Method != "session/update" {
 			return
 		}

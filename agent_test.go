@@ -14,6 +14,12 @@ func TestTheSettingsAddAnACPAgent(t *testing.T) {
 	defer a.shutdown()
 	a.root = t.TempDir()
 	a.agentsPath = filepath.Join(t.TempDir(), "agents.json")
+	// The registry the panel offers, as the network would give it.
+	a.registry = []acpRegistryAgent{{
+		ID: "gemini", Name: "Gemini CLI", Version: "0.70.0",
+		Distribution: acpDistribution{Npx: &acpPackage{Package: "@google/gemini-cli@0.70.0", Args: []string{"--acp"}}},
+	}}
+	a.registryHas["npx"] = true
 	a.settingsOpen = true
 	tt := ui.NewTester(a.view, 1280, 840)
 	tt.Frame()
@@ -38,7 +44,7 @@ func TestTheSettingsAddAnACPAgent(t *testing.T) {
 		t.Fatalf("default: %+v", a.agents)
 	}
 	saved, err := workspace.LoadAgents(a.agentsPath)
-	if err != nil || len(saved.Items) != 1 || saved.Items[0].Command != "gemini --experimental-acp" {
+	if err != nil || len(saved.Items) != 1 || saved.Items[0].Command != "npx -y @google/gemini-cli@0.70.0 --acp" {
 		t.Fatalf("saved: %+v %v", saved, err)
 	}
 }

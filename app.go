@@ -239,6 +239,13 @@ type app struct {
 	agentAddOpen                     bool
 	agentAddName, agentAddCommand    string
 	agentRegistryOpen                bool
+	registry                         []acpRegistryAgent
+	registryErr                      string
+	registryLoading                  bool
+	registryQuery                    string
+	registryStatus                   map[string]string
+	registryHas                      map[string]bool
+	registryRun                      int
 	branchFrom, branchName           string
 	logPattern                       *regexp.Regexp
 	logPatternKey                    string
@@ -252,7 +259,7 @@ type app struct {
 
 func newApp() *app {
 	ctx, cancel := context.WithCancel(context.Background())
-	return &app{projectCtx: ctx, projectCancel: cancel, backend: core.NewLocal(), lsps: map[string]*lspSession{}, pendingCaret: map[string]editor.Pos{}, sideWidth: 248, rightShare: 72, logShare: 74, rightSection: "outline", bottomTab: "terminal", editorShare: 62, splitShare: 50, stamps: map[string]workspace.Stamp{}, stale: map[string]string{}, commandUses: map[string]int{}, entries: map[string][]workspace.Entry{}, expanded: map[string]bool{}, loading: map[string]bool{}, themeID: "vael-dark", iconID: "badges", fontFamily: "monospace", minimap: true, sidebar: true, section: "files", guides: true, autoClose: true, numbers: true, selected: -1, termSelected: -1, logLocalOpen: true, logRemoteOpen: true, logRemoteClosed: map[string]bool{}, logGraphOn: true, logDetailOn: true}
+	return &app{projectCtx: ctx, projectCancel: cancel, backend: core.NewLocal(), lsps: map[string]*lspSession{}, pendingCaret: map[string]editor.Pos{}, sideWidth: 248, rightShare: 72, logShare: 74, rightSection: "outline", bottomTab: "terminal", editorShare: 62, splitShare: 50, stamps: map[string]workspace.Stamp{}, stale: map[string]string{}, commandUses: map[string]int{}, entries: map[string][]workspace.Entry{}, expanded: map[string]bool{}, loading: map[string]bool{}, themeID: "vael-dark", iconID: "badges", fontFamily: "monospace", minimap: true, sidebar: true, section: "files", guides: true, autoClose: true, numbers: true, selected: -1, termSelected: -1, registryStatus: map[string]string{}, registryHas: map[string]bool{}, logLocalOpen: true, logRemoteOpen: true, logRemoteClosed: map[string]bool{}, logGraphOn: true, logDetailOn: true}
 }
 func (a *app) active() *fileTab {
 	if a.split && a.focusPane == 1 {

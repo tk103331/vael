@@ -1,6 +1,7 @@
 package main
 
 import (
+	"runtime"
 	"strings"
 
 	"github.com/egoist/mygo/ui"
@@ -335,6 +336,9 @@ func (a *app) agentsSettings(c *ui.Context, p palette) {
 			if quiet(c, "从 ACP Registry 添加…", false, p) {
 				a.agentRegistryOpen = !a.agentRegistryOpen
 				a.agentAddOpen = false
+				if a.agentRegistryOpen {
+					a.loadRegistry(false)
+				}
 			}
 			if quiet(c, "手动添加…", false, p) {
 				a.agentAddOpen = !a.agentAddOpen
@@ -389,46 +393,143 @@ func (a *app) agentSettingsRow(c *ui.Context, p palette, agent workspace.Agent) 
 	}
 }
 
-// agentRegistryView offers the agents of the ACP registry.
+// agentRegistryView offers the agents of the ACP registry: the index is
+// fetched from its site, and each agent is added as its npx or uvx package
+// or as the binary for this platform.
 func (a *app) agentRegistryView(c *ui.Context, p palette) {
-	ui.Column(c).FillWidth().Padding(6).Gap(2).Background(p.wash).Radius(6).Children(func() {
-		for _, agent := range acpRegistry {
-			agent := agent
-			installed := false
-			for _, known := range a.agents.Items {
-				if known.Name == agent.Name {
-					installed = true
-					break
-				}
+	ui.Column(c).FillWidth().Padding(6).Gap(4).Background(p.wash).Radius(6).Children(func() {
+		ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(6).Children(func() {
+			ui.Text(c, "ACP Registry").FontSize(11.5).FontWeight(650).TextColor(p.text).Grow(1)
+			switch {
+			case a.registryLoading:
+				ui.Text(c, "读取中…").FontSize(10).TextColor(p.muted)
+			case len(a.registry) > 0:
+				ui.Textf(c, "%d 个 Agent", len(a.registry)).FontSize(10).TextColor(p.muted)
 			}
-			b := ui.ButtonBase(c).FillWidth().Height(34).Padding(0, 8).Gap(8).Radius(5).
-				AlignItems(ui.Center).Label(agent.Name)
-			if b.Hovered() {
-				b.Background(p.edge)
+			if quiet(c, "刷新", false, p) {
+				a.loadRegistry(true)
 			}
-			b.Children(func() {
-				ui.Column(c).Grow(1).MinWidth(0).Gap(1).Children(func() {
-					ui.Text(c, agent.Name).FontSize(12).TextColor(p.text).SingleLine().Ellipsis("…")
-					ui.Text(c, agent.Command).FontSize(9.5).TextColor(p.muted).
-						Font("monospace").SingleLine().Ellipsis("…")
-				})
-				if installed {
-					ui.Icon(c, checkIcon).Size(11, 11).TextColor(p.accent)
-				} else {
-					ui.Icon(c, plusIcon).Size(11, 11).TextColor(p.muted)
+		})
+		if a.registryErr != "" {
+			ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(6).Children(func() {
+				ui.Text(c, a.registryErr).FontSize(10).TextColor(p.danger).Grow(1).SingleLine().Ellipsis("…")
+				if quiet(c, "重试", false, p) {
+					a.loadRegistry(true)
 				}
 			})
-			if b.Clicked() && !installed {
-				a.report(a.agents.Add(agent))
-				if a.agents.Default == "" {
-					a.agents.Default = agent.Name
-				}
-				a.saveAgents()
-			}
 		}
-		ui.Text(c, "这些命令只是起点，接入后可在「手动添加」里改名或改命令。").
-			FontSize(9.5).TextColor(p.muted).Padding(4, 6)
+		if len(a.registry) > 0 {
+			ui.TextInput(c, &a.registryQuery).FillWidth().Height(26).Padding(2, 6).
+				Placeholder("搜索名字或描述…").Label("搜索 ACP Registry")
+			matches := a.registryMatches()
+			ui.Scroll(c).FillWidth().MaxHeight(300).Children(func() {
+				ui.Column(c).FillWidth().Gap(1).Children(func() {
+					for _, agent := range matches {
+						agent := agent
+						a.registryRow(c, p, agent)
+					}
+				})
+			})
+			if len(matches) == 0 {
+				ui.Text(c, "没有匹配的 Agent。").FontSize(10.5).TextColor(p.muted)
+			}
+			ui.Text(c, "npx／uvx 直接以包启动，二进制会下载到配置目录；点一个即加入。").
+				FontSize(9.5).TextColor(p.muted).Padding(4, 2)
+		}
 	})
+}
+
+// registryRow is an agent of the registry: its name, its description and
+// how it would be added here.
+func (a *app) registryRow(c *ui.Context, p palette, agent acpRegistryAgent) {
+	installed := a.agents.Has(agent.Name)
+	kind := acpRegistryKind(agent, runtime.GOOS, runtime.GOARCH, a.hasRegistryTool)
+	status := a.registryStatus[agent.ID]
+	b := ui.ButtonBase(c).FillWidth().Height(40).Padding(0, 8).Gap(8).Radius(5).
+		AlignItems(ui.Center).Label(agent.Name)
+	if b.Hovered() && !installed {
+		b.Background(p.edge)
+	}
+	b.Children(func() {
+		ui.Column(c).Grow(1).MinWidth(0).Gap(1).Children(func() {
+			ui.Row(c).FillWidth().Gap(6).AlignItems(ui.Center).Children(func() {
+				ui.Text(c, agent.Name).FontSize(12).TextColor(p.text).SingleLine().Ellipsis("…")
+				ui.Text(c, "v"+agent.Version).FontSize(9).TextColor(p.muted)
+			})
+			ui.Text(c, registryDescription(agent)).FontSize(9.5).TextColor(p.muted).
+				SingleLine().Ellipsis("…")
+		})
+		switch {
+		case installed:
+			ui.Icon(c, checkIcon).Size(11, 11).TextColor(p.accent)
+		case status != "":
+			ui.Text(c, status).FontSize(9.5).TextColor(p.muted).SingleLine().Ellipsis("…")
+		default:
+			ui.Text(c, registryKindLabel(kind)).FontSize(9.5).TextColor(p.muted)
+			ui.Icon(c, plusIcon).Size(10, 10).TextColor(p.muted)
+		}
+	})
+	if b.Clicked() && !installed && status != "下载中…" {
+		a.addRegistryAgent(agent, kind)
+	}
+	b.Tooltip(registryTooltip(agent, kind))
+}
+
+// registryDescription is what a row says of an agent: what it does, or
+// where it comes from when it says nothing.
+func registryDescription(agent acpRegistryAgent) string {
+	if agent.Description != "" {
+		return agent.Description
+	}
+	if agent.Repository != "" {
+		return agent.Repository
+	}
+	return agent.ID
+}
+
+// registryKindLabel names how an agent is added.
+func registryKindLabel(kind string) string {
+	switch kind {
+	case "npx", "uvx":
+		return kind
+	case "binary":
+		return "二进制"
+	}
+	return "此平台无分发"
+}
+
+// registryTooltip is the longer word of a row: the package or binary, and
+// what it runs.
+func registryTooltip(agent acpRegistryAgent, kind string) string {
+	switch kind {
+	case "npx":
+		return acpPackageCommand("npx", agent.Distribution.Npx)
+	case "uvx":
+		return acpPackageCommand("uvx", agent.Distribution.Uvx)
+	case "binary":
+		target, platform, ok := acpBinaryFor(agent, runtime.GOOS, runtime.GOARCH)
+		if ok {
+			return platform + " · " + target.Archive
+		}
+	}
+	return registryDescription(agent)
+}
+
+// registryMatches are the agents of the index that hold what is searched.
+func (a *app) registryMatches() []acpRegistryAgent {
+	query := strings.ToLower(strings.TrimSpace(a.registryQuery))
+	if query == "" {
+		return a.registry
+	}
+	var matches []acpRegistryAgent
+	for _, agent := range a.registry {
+		if strings.Contains(strings.ToLower(agent.Name), query) ||
+			strings.Contains(strings.ToLower(agent.ID), query) ||
+			strings.Contains(strings.ToLower(agent.Description), query) {
+			matches = append(matches, agent)
+		}
+	}
+	return matches
 }
 
 // agentAddView is the form that adds an agent of the user's own.

@@ -9,10 +9,11 @@ import (
 
 // Agent is an ACP agent the editor starts: a name, and the command that
 // runs it, which speaks the Agent Client Protocol over its standard input
-// and output.
+// and output, with the environment the registry asks it to run with.
 type Agent struct {
-	Name    string `json:"name"`
-	Command string `json:"command"`
+	Name    string            `json:"name"`
+	Command string            `json:"command"`
+	Env     map[string]string `json:"env,omitempty"`
 }
 
 // Agents are the ACP agents the editor may start, and the one it starts
@@ -53,6 +54,16 @@ func (a *Agents) Remove(name string) {
 	if a.Default == name {
 		a.Default = ""
 	}
+}
+
+// Has reports whether an agent of a name is among the others.
+func (a *Agents) Has(name string) bool {
+	for _, old := range a.Items {
+		if old.Name == name {
+			return true
+		}
+	}
+	return false
 }
 
 // Chosen is the agent to start when one is asked for: the default, one
