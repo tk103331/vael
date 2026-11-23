@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"strings"
 
 	"github.com/egoist/mygo/ui"
 )
@@ -81,25 +82,76 @@ func (a *app) setAgentMode(modeID string) {
 // first, then the mode and what else the agent offers.
 func (a *app) agentConfigBar(c *ui.Context, p palette) {
 	ui.Row(c).FillWidth().Wrap().Gap(4).Children(func() {
-		configMode := false
-		for _, option := range a.agentConfig {
+		shown := false
+		for _, option := range agentConfigOrder(a.agentConfig) {
 			option := option
-			if option.Category == "mode" {
-				configMode = true
+			if !agentConfigShown(option) {
+				continue
 			}
+			shown = true
 			a.agentConfigChip(c, p, option)
 		}
-		// An agent that only names its modes gets a chip for them.
-		if !configMode && len(a.agentModes) > 0 && a.agentModeID != "" {
+		// The protocol's modes are what an agent offers before session
+		// config options: an agent that offers those has no chip of its
+		// own for them, and showing both doubles what they name.
+		if !shown && len(a.agentConfig) == 0 && len(a.agentModes) > 0 && a.agentModeID != "" {
 			a.agentModeChip(c, p)
 		}
 	})
 }
 
+// agentConfigOrder is the options as the bar shows them: what chooses the
+// model first, as the model is what one changes most, then the rest in
+// the order the agent gave.
+func agentConfigOrder(options []acpConfigOption) []acpConfigOption {
+	ordered := make([]acpConfigOption, 0, len(options))
+	for _, option := range options {
+		if option.IsModel() {
+			ordered = append(ordered, option)
+		}
+	}
+	for _, option := range options {
+		if !option.IsModel() {
+			ordered = append(ordered, option)
+		}
+	}
+	return ordered
+}
+
+// agentConfigShown tells whether an option is one the bar can show: a
+// switch, or a choice the agent named. An option of a type this editor
+// does not know is left to the agent's default.
+func agentConfigShown(option acpConfigOption) bool {
+	if option.ID == "" {
+		return false
+	}
+	switch option.Type {
+	case "", "select", "boolean":
+		return true
+	}
+	return false
+}
+
+// agentConfigLabel names an option and the value it is on. A value the
+// agent already names after the option, as "Thinking: medium", is not
+// named twice.
+func agentConfigLabel(option acpConfigOption) string {
+	value := option.CurrentName()
+	name := strings.TrimSpace(option.Name)
+	if name == "" || value == "" {
+		return value
+	}
+	lowerValue, lowerName := strings.ToLower(value), strings.ToLower(name)
+	if strings.HasPrefix(lowerValue, lowerName+":") || strings.HasPrefix(lowerValue, lowerName+"：") {
+		return value
+	}
+	return name + "：" + value
+}
+
 // agentConfigChip is one selector: its name and value, and a list of the
 // values when it is clicked.
 func (a *app) agentConfigChip(c *ui.Context, p palette, option acpConfigOption) {
-	label := option.Name + "：" + option.CurrentName()
+	label := agentConfigLabel(option)
 	open := a.agentOptionOpen == option.ID
 	b := ui.ButtonBase(c).Height(22).Padding(0, 7).Radius(9).Gap(4).
 		AlignItems(ui.Center).Label(label)

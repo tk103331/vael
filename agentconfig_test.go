@@ -266,3 +266,94 @@ func TestTheAgentMarkdownIsSplit(t *testing.T) {
 		t.Fatalf("the spans: %+v", spans)
 	}
 }
+
+// TestTheAgentConfigBarPutsTheModelFirstAndShowsThinkingOnce checks the
+// row of selectors: the model first, the thinking option named once, and
+// no mode chip beside it when the agent offers config options.
+func TestTheAgentConfigBarPutsTheModelFirstAndShowsThinkingOnce(t *testing.T) {
+	a := newApp()
+	defer a.shutdown()
+	a.root = t.TempDir()
+	a.rightPanel = true
+	a.rightSection = "agent"
+	a.agentConfig = []acpConfigOption{
+		{ID: "mode", Name: "模式", Category: "mode", Type: "select",
+			CurrentValue: json.RawMessage(`"code"`),
+			Options:      []acpConfigChoice{{Value: "ask", Name: "Ask"}, {Value: "code", Name: "Code"}}},
+		{ID: "thinking", Name: "Thinking", Category: "thought_level", Type: "select",
+			CurrentValue: json.RawMessage(`"medium"`),
+			Options:      []acpConfigChoice{{Value: "low", Name: "Thinking: low"}, {Value: "medium", Name: "Thinking: medium"}}},
+		{ID: "model", Name: "Model", Category: "model", Type: "select",
+			CurrentValue: json.RawMessage(`"gpt"`),
+			Options:      []acpConfigChoice{{Value: "gpt", Name: "magpie/GPT-6.1-Sol"}}},
+	}
+	// An agent that names its modes too, as the one of the report did.
+	a.agentModes = []acpMode{{ID: "m", Name: "Thinking: medium"}}
+	a.agentModeID = "m"
+	tt := ui.NewTester(a.view, 1280, 840)
+	tt.Frame()
+	texts := strings.Join(tt.Texts(), "\n")
+	model := strings.Index(texts, "Model：magpie/GPT-6.1-Sol")
+	thinking := strings.Index(texts, "Thinking: medium")
+	configMode := strings.Index(texts, "模式：Code")
+	if model < 0 || thinking < 0 || configMode < 0 {
+		t.Fatalf("the chips are not drawn: %v", tt.Texts())
+	}
+	if model > configMode || model > thinking {
+		t.Fatalf("the model is not first: model %d, mode %d, thinking %d", model, configMode, thinking)
+	}
+	if strings.Contains(texts, "Thinking：Thinking: medium") {
+		t.Fatalf("the thought option names its value twice: %v", tt.Texts())
+	}
+	if strings.Contains(texts, "模式：Thinking: medium") {
+		t.Fatalf("the mode chip doubles the thought option: %v", tt.Texts())
+	}
+}
+
+func TestTheAgentConfigOrderKeepsTheRest(t *testing.T) {
+	options := []acpConfigOption{
+		{ID: "mode"},
+		{ID: "thinking", Category: "thought_level"},
+		{ID: "model", Category: "model"},
+		{ID: "context", Category: "model_config"},
+	}
+	ordered := agentConfigOrder(options)
+	got := []string{ordered[0].ID, ordered[1].ID, ordered[2].ID, ordered[3].ID}
+	want := []string{"model", "mode", "thinking", "context"}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("the order: %v, not %v", got, want)
+		}
+	}
+}
+
+func TestALegacyModeIsShownWithoutConfigOptions(t *testing.T) {
+	a := newApp()
+	defer a.shutdown()
+	a.root = t.TempDir()
+	a.rightPanel = true
+	a.rightSection = "agent"
+	a.agentModes = []acpMode{{ID: "ask", Name: "Ask"}, {ID: "code", Name: "Code"}}
+	a.agentModeID = "code"
+	tt := ui.NewTester(a.view, 1280, 840)
+	tt.Frame()
+	if _, ok := tt.Find("模式：Code"); !ok {
+		t.Fatalf("the mode chip is not drawn: %v", tt.Texts())
+	}
+}
+
+func TestAnUnknownConfigTypeIsLeftAlone(t *testing.T) {
+	shown := agentConfigShown(acpConfigOption{ID: "x", Type: ""})
+	if !shown {
+		t.Fatal("a select of no type is hidden")
+	}
+	if !agentConfigShown(acpConfigOption{ID: "x", Type: "boolean"}) {
+		t.Fatal("a switch is hidden")
+	}
+	if agentConfigShown(acpConfigOption{ID: "x", Type: "_custom"}) {
+		t.Fatal("an unknown type is shown")
+	}
+	if agentConfigShown(acpConfigOption{}) {
+		t.Fatal("an option without an ID is shown")
+	}
+}

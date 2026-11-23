@@ -553,22 +553,29 @@ func (a *app) answerAgent(option acpPermissionOption) {
 // agentView is the panel of the right that holds the conversation with
 // the agent, and the box to ask it something.
 func (a *app) agentView(c *ui.Context, p palette) {
-	ui.Column(c).Fill().Children(func() {
+	// The panel's title takes the top of the column around this; what is
+	// left is the conversation, and the box under it.
+	ui.Column(c).FillWidth().Grow(1).MinHeight(0).Children(func() {
 		a.agentToolbar(c, p)
 		ui.Divider(c)
-		ui.Scroll(c).FillWidth().Grow(1).TrackScroll(&a.agentScroll).Children(func() {
-			ui.Column(c).FillWidth().Padding(10).Gap(10).Children(func() {
-				if len(a.agentLines) == 0 {
-					a.agentEmptyView(c, p)
-					return
-				}
-				for i := range a.agentLines {
-					a.agentLineView(c, p, &a.agentLines[i], i)
-				}
-				if a.agentBusy {
-					a.agentBusyView(c, p)
-				}
+		// The conversation takes the room the things below it leave, and
+		// scrolls what is longer, instead of pushing them out.
+		ui.Box(c).FillWidth().Grow(1).MinHeight(0).Children(func() {
+			ui.Scroll(c).FillWidth().FillHeight().TrackScroll(&a.agentScroll).Children(func() {
+				ui.Column(c).FillWidth().Padding(10).Gap(10).Children(func() {
+					if len(a.agentLines) == 0 {
+						a.agentEmptyView(c, p)
+						return
+					}
+					for i := range a.agentLines {
+						a.agentLineView(c, p, &a.agentLines[i], i)
+					}
+					if a.agentBusy {
+						a.agentBusyView(c, p)
+					}
+				})
 			})
+			a.agentScrollButton(c, p)
 		})
 		a.agentPlanView(c, p)
 		a.agentPermissionView(c, p)
@@ -1018,6 +1025,26 @@ func agentSpans(text string, size float32, color ui.Color, p palette) []ui.Span 
 	return spans
 }
 
+// agentScrollButton goes back to the end of the conversation, floating
+// over it when the user has scrolled away.
+func (a *app) agentScrollButton(c *ui.Context, p palette) {
+	if a.agentScroll.MaxY <= 0 || a.agentScroll.Y >= a.agentScroll.MaxY-24 {
+		return
+	}
+	b := ui.ButtonBase(c).Absolute().Right(14).Bottom(10).Size(28, 28).Radius(14).
+		Center().Label("回到底部").Background(p.card).Border(1, p.edge)
+	if b.Hovered() {
+		b.Background(p.edge)
+	}
+	b.Children(func() {
+		ui.Icon(c, arrowDownIcon).Size(13, 13).TextColor(p.text)
+	})
+	b.Tooltip("回到底部")
+	if b.Clicked() {
+		a.agentScroll.ScrollTo(a.agentScroll.X, math.MaxFloat32, ui.Smooth)
+	}
+}
+
 // agentBusyView says what the agent is doing, after the last line.
 func (a *app) agentBusyView(c *ui.Context, p palette) {
 	label := "正在回答…"
@@ -1179,7 +1206,7 @@ func (a *app) agentComposer(c *ui.Context, p palette) {
 		if len(a.agentConfig) > 0 || len(a.agentModes) > 0 {
 			a.agentConfigBar(c, p)
 		}
-		input := ui.TextArea(c, &a.agentInput).FillWidth().Lines(1, 6).
+		input := ui.TextArea(c, &a.agentInput).FillWidth().Lines(1, 6).MinHeight(30).
 			Padding(4, 6).Placeholder("询问 Agent…").Label("Agent 输入")
 		input.OnTextKey(func(k ui.TextKey) bool {
 			// Enter sends; Shift+Enter breaks the line.
