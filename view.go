@@ -84,6 +84,7 @@ var imageIcon = lineIcon(`<rect x="3" y="4" width="18" height="16" rx="2"/><circ
 var lspIcon = lineIcon(`<polyline points="3 12 7 12 10 5 14 19 17 12 21 12"/>`)
 var alertIcon = lineIcon(`<path d="M12 3 2 21h20L12 3z"/><line x1="12" y1="9" x2="12" y2="14"/><line x1="12" y1="17.5" x2="12.01" y2="17.5"/>`)
 var agentIcon = lineIcon(`<path d="M12 3l1.7 4.3L18 9l-4.3 1.7L12 15l-1.7-4.3L6 9l4.3-1.7z"/><path d="M18 15l.9 2.1L21 18l-2.1.9L18 21l-.9-2.1L15 18l2.1-.9z"/>`)
+var historyIcon = lineIcon(`<path d="M3 12a9 9 0 1 0 3-6.7"/><polyline points="3 4 3 9 8 9"/><polyline points="12 7 12 12 16 14"/>`)
 var symbolsIcon = lineIcon(`<circle cx="12" cy="12" r="3"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3M5 5l2 2m10 10 2 2M19 5l-2 2M7 17l-2 2"/>`)
 
 func (a *app) activityView(c *ui.Context, p palette) {

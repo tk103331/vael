@@ -67,9 +67,12 @@ func TestACPAgentHelper(t *testing.T) {
 			write(map[string]any{
 				"jsonrpc": "2.0", "id": *message.ID,
 				"result": map[string]any{
-					"protocolVersion":   acpProtocolVersion,
-					"agentCapabilities": map[string]any{"loadSession": true},
-					"agentInfo":         map[string]any{"name": "Helper", "version": "1"},
+					"protocolVersion": acpProtocolVersion,
+					"agentCapabilities": map[string]any{
+						"loadSession":         true,
+						"sessionCapabilities": map[string]any{"list": map[string]any{}},
+					},
+					"agentInfo": map[string]any{"name": "Helper", "version": "1"},
 				},
 			})
 		case "session/new":
@@ -83,6 +86,49 @@ func TestACPAgentHelper(t *testing.T) {
 						"availableModes": []any{
 							map[string]any{"id": "ask", "name": "Ask", "description": "问一问"},
 							map[string]any{"id": "code", "name": "Code", "description": "直接改"},
+						},
+					},
+				},
+			})
+		case "session/list":
+			write(map[string]any{
+				"jsonrpc": "2.0", "id": *message.ID,
+				"result": map[string]any{"sessions": []any{
+					map[string]any{"sessionId": "s1", "cwd": "/tmp", "title": "当前会话", "updatedAt": "2026-11-23T10:00:00Z"},
+					map[string]any{"sessionId": "session-old-123456789", "cwd": "/tmp", "title": "实现会话列表", "updatedAt": "2026-11-22T10:00:00Z"},
+					map[string]any{"sessionId": "session-no-title", "cwd": "/tmp"},
+				}},
+			})
+		case "session/load":
+			var params struct {
+				SessionID string `json:"sessionId"`
+			}
+			json.Unmarshal(message.Params, &params)
+			for _, words := range []struct{ kind, text string }{
+				{"user_message_chunk", "旧问题"},
+				{"agent_message_chunk", "旧回答"},
+			} {
+				write(map[string]any{
+					"jsonrpc": "2.0", "method": "session/update",
+					"params": map[string]any{
+						"sessionId": params.SessionID,
+						"update": map[string]any{
+							"sessionUpdate": words.kind,
+							"content":       map[string]any{"type": "text", "text": words.text},
+						},
+					},
+				})
+			}
+			write(map[string]any{
+				"jsonrpc": "2.0", "id": *message.ID,
+				"result": map[string]any{
+					"sessionId":     params.SessionID,
+					"configOptions": configs(),
+					"modes": map[string]any{
+						"currentModeId": mode,
+						"availableModes": []any{
+							map[string]any{"id": "ask", "name": "Ask"},
+							map[string]any{"id": "code", "name": "Code"},
 						},
 					},
 				},

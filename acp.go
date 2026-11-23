@@ -44,6 +44,11 @@ type acpInitialize struct {
 	ProtocolVersion   int `json:"protocolVersion"`
 	AgentCapabilities struct {
 		LoadSession bool `json:"loadSession"`
+		// SessionCapabilities.list is an empty object when the agent
+		// supports listing its sessions.
+		SessionCapabilities struct {
+			List json.RawMessage `json:"list"`
+		} `json:"sessionCapabilities"`
 	} `json:"agentCapabilities"`
 	AgentInfo struct {
 		Name    string `json:"name"`
@@ -151,6 +156,27 @@ func (o acpConfigOption) CurrentName() string {
 // complete list, as options depend on each other.
 type setConfigResult struct {
 	ConfigOptions []acpConfigOption `json:"configOptions"`
+}
+
+// acpSessionInfo is one entry of what an agent says its sessions are.
+type acpSessionInfo struct {
+	SessionID string `json:"sessionId"`
+	CWD       string `json:"cwd"`
+	Title     string `json:"title"`
+	UpdatedAt string `json:"updatedAt"`
+}
+
+// acpSessionList is the answer to session/list.
+type acpSessionList struct {
+	Sessions []acpSessionInfo `json:"sessions"`
+	Next     string           `json:"nextCursor"`
+}
+
+// canListSessions tells whether the agent said it supports session/list:
+// an empty object for "list" means it does.
+func (i acpInitialize) canListSessions() bool {
+	raw := strings.TrimSpace(string(i.AgentCapabilities.SessionCapabilities.List))
+	return raw != "" && raw != "null"
 }
 
 // acpPromptResult is how a turn of the conversation ended.

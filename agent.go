@@ -128,6 +128,9 @@ func (a *app) startAgent() {
 			}
 			a.agentConn = conn
 			a.agentSession = session.SessionID
+			a.agentCanLoad = init.AgentCapabilities.LoadSession
+			a.agentCanList = init.canListSessions()
+			a.agentSessions = nil
 			a.agentConfig = session.ConfigOptions
 			a.agentModes = session.Modes.AvailableModes
 			a.agentModeID = session.Modes.CurrentModeID
@@ -169,6 +172,11 @@ func (a *app) stopAgent() {
 	a.agentModes = nil
 	a.agentModeID = ""
 	a.agentOptionOpen = ""
+	a.agentSessions = nil
+	a.agentHistoryOpen = false
+	a.agentCanLoad = false
+	a.agentCanList = false
+	a.agentLoading = false
 	a.agentStatus = "已停止"
 	if a.agentCancel != nil {
 		a.agentCancel()
@@ -245,7 +253,11 @@ func (a *app) applyAgentUpdate(update acpUpdate) {
 	case "agent_thought_chunk":
 		a.appendAgentLine("thought", update.Words())
 	case "user_message_chunk":
-		// The panel writes what the user said itself.
+		// The panel writes what the user said itself, except when a
+		// previous session replays what they said.
+		if a.agentLoading {
+			a.appendAgentLine("you", update.Words())
+		}
 	case "tool_call":
 		// A tool the agent takes up, which its updates then follow.
 		for i := range a.agentLines {
@@ -611,13 +623,11 @@ func (a *app) agentToolbar(c *ui.Context, p palette) {
 			if smallIconButton(c, plusIcon, "新建会话", p) {
 				a.restartAgentSession()
 			}
+			a.agentHistoryButton(c, p)
 		}
 		ui.Box(c).Grow(1)
-		if a.agentBusy {
-			if smallIconButton(c, stopIcon, "取消本轮", p) {
-				a.cancelAgentPrompt()
-			}
-		}
+		// The turn is stopped by the one button in the composer: a second
+		// stop here would be the same action twice.
 		if a.agentStatus != "" {
 			ui.Text(c, a.agentStatus).FontSize(10).TextColor(p.muted)
 		}
@@ -626,7 +636,7 @@ func (a *app) agentToolbar(c *ui.Context, p palette) {
 				a.startAgent()
 			}
 		} else {
-			if smallIconButton(c, stopIcon, "停止 Agent", p) {
+			if smallIconButton(c, xCircleIcon, "停止 Agent", p) {
 				a.stopAgent()
 			}
 		}
@@ -668,6 +678,8 @@ func (a *app) agentMenu(c *ui.Context, p palette) {
 				a.agentModes = nil
 				a.agentModeID = ""
 				a.agentOptionOpen = ""
+				a.agentSessions = nil
+				a.agentHistoryOpen = false
 				a.agentStatus = ""
 				a.startAgent()
 			}

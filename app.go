@@ -240,6 +240,13 @@ type app struct {
 	agentAddName, agentAddCommand    string
 	agentRegistryOpen                bool
 	agentConfig                      []acpConfigOption
+	agentCanLoad                     bool
+	agentCanList                     bool
+	agentSessions                    []acpSessionInfo
+	agentHistoryOpen                 bool
+	agentHistoryLoading              bool
+	agentHistoryErr                  string
+	agentLoading                     bool
 	agentModes                       []acpMode
 	agentModeID                      string
 	agentOptionOpen                  string
