@@ -27,12 +27,15 @@ func (a *app) settingsView(c *ui.Context, p palette) {
 	}
 	open := true
 	ui.Modal(c, &open, func() {
-		ui.Column(c).Width(760).Padding(20).Gap(12).Children(func() {
+		// The window keeps one height, whatever a section holds: the
+		// room the content does not need is empty, and what it needs
+		// past the room scrolls.
+		ui.Column(c).Width(760).Height(560).Padding(20).Gap(12).Children(func() {
 			ui.Text(c, "设置").FontSize(17).FontWeight(650)
 			ui.Row(c).FillWidth().Grow(1).MinHeight(0).Gap(16).AlignItems(ui.Start).Children(func() {
 				// The sections down the left, as an IDE's preferences, and
 				// the one chosen beside them.
-				ui.Column(c).Width(168).Shrink(0).Gap(2).Children(func() {
+				ui.Column(c).Width(168).Shrink(0).FillHeight().Gap(2).Children(func() {
 					a.settingsTab(c, p, "外观", settingsLook, sunIcon)
 					a.settingsTab(c, p, "编辑器", settingsEditor, codeIcon)
 					a.settingsTab(c, p, "环境", settingsEnv, globeIcon)
@@ -40,8 +43,8 @@ func (a *app) settingsView(c *ui.Context, p palette) {
 					a.settingsTab(c, p, "ACP Agent", settingsAgent, agentIcon)
 				})
 				ui.Divider(c)
-				ui.Column(c).Grow(1).MinWidth(0).Children(func() {
-					ui.Scroll(c).FillWidth().MaxHeight(520).Children(func() {
+				ui.Column(c).Grow(1).MinWidth(0).FillHeight().Children(func() {
+					ui.Scroll(c).FillWidth().FillHeight().Children(func() {
 						ui.Column(c).FillWidth().Gap(2).Children(func() {
 							switch a.settingsSection {
 							case settingsEditor:
