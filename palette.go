@@ -39,6 +39,8 @@ func (a *app) commands() []command {
 		{title: "搜索：项目全文搜索", hint: "在项目文件中查找文本", run: func() { a.sidebar = true; a.section = "search" }},
 		{title: "搜索：项目符号", hint: "查找函数、类型和类", run: a.symbolsCommand},
 		{title: "视图：大纲", hint: "当前文件的结构", run: func() { a.rightSection = "outline"; a.rightPanel = true }},
+		{title: "代码：格式化文件", hint: "用语言服务器格式化当前文件", run: a.lspFormat},
+		{title: "视图：语言服务器设置", hint: "启用服务器、改启动命令", run: func() { a.settingsOpen = true; a.settingsSection = settingsLSP }},
 		{title: "视图：Agent", hint: "与 Agent 对话", run: func() { a.rightSection = "agent"; a.rightPanel = true }},
 		{title: "视图：插件面板（原型）", hint: "插件用声明式视图树画的界面", run: func() { a.rightSection = "plugin-demo"; a.rightPanel = true }},
 		{title: "任务：运行命令…", hint: "在项目目录中运行命令", run: func() { a.sidebar = true; a.section = "tasks" }},

@@ -246,3 +246,39 @@ func (w *Watch) Changes() <-chan workspace.DiskChange { return w.changes }
 
 // Close ends the watch: the core stops looking at the files.
 func (w *Watch) Close() error { return w.subscription.Close() }
+
+// LSP is a language server the core runs for a project: the editor writes
+// the protocol to it, and what it prints comes back as the messages of the
+// stream. The core runs the server where the files are, so a server of a
+// remote project runs there too.
+type LSP struct {
+	client *Client
+	stream Subscription
+}
+
+// LSP runs a language server in a project directory, and attaches to it.
+// The server lasts until the LSP is closed, which ends its process.
+func (c *Client) LSP(ctx context.Context, root, command string, args []string) (*LSP, error) {
+	streaming, ok := c.transport.(Streaming)
+	if !ok {
+		return nil, &Errorf{Code: CodeUnsupported, Err: errNoStream}
+	}
+	subscription, err := streaming.Subscribe(ctx, "lsp", params{Root: root, Text: command, Args: args})
+	if err != nil {
+		return nil, err
+	}
+	return &LSP{client: c, stream: subscription}, nil
+}
+
+// Write sends what the editor writes to the server, as the bytes of the
+// protocol it speaks.
+func (l *LSP) Write(ctx context.Context, data string) error {
+	return l.client.transport.Call(ctx, "lsp/write", params{Stream: l.stream.Stream(), Text: data}, nil)
+}
+
+// Messages are what the server prints: "lsp/output" with the data it
+// wrote, and "lsp/exit" with what it said on its errors last.
+func (l *LSP) Messages() <-chan Message { return l.stream.Messages() }
+
+// Close ends the server.
+func (l *LSP) Close() error { return l.stream.Close() }

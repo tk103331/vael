@@ -69,7 +69,7 @@ func (Service) Handle(ctx context.Context, method string, raw json.RawMessage) (
 	case "info":
 		home, err := os.UserHomeDir()
 		return Info{ProtocolVersion, home, []string{
-			FeatureWatch, FeatureStreamRun, FeatureReplace, FeatureSymbols, FeatureClone,
+			FeatureWatch, FeatureStreamRun, FeatureReplace, FeatureSymbols, FeatureClone, FeatureLSP,
 		}}, err
 	case "stat":
 		info, err := os.Stat(p.Path)

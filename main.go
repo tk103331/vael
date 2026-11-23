@@ -30,6 +30,8 @@ func main() {
 		if pathErr == nil {
 			a.agentsPath = filepath.Join(filepath.Dir(sessionPath), "agents.json")
 			a.loadAgents()
+			a.lspPath = filepath.Join(filepath.Dir(sessionPath), "lsp.json")
+			a.loadLSPSettings()
 			a.environmentsPath = filepath.Join(filepath.Dir(sessionPath), "environments.json")
 			if saved, err := workspace.LoadEnvironments(a.environmentsPath); err == nil {
 				a.environments = saved
@@ -104,6 +106,11 @@ func (a *app) menus() {
 				if f := a.active(); f != nil {
 					a.reloadFile(f)
 				}
+			}),
+			item("格式化文件", "CmdOrCtrl+Shift+I", a.lspFormat),
+			item("语言服务器设置…", "", func() {
+				a.settingsOpen = true
+				a.settingsSection = settingsLSP
 			}),
 		}},
 		{Label: "视图", Submenu: []*mygo.MenuItem{

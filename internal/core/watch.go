@@ -58,6 +58,7 @@ func (s *Server) stopWatch(m Message) {
 	s.mu.Lock()
 	stream := s.streams[p.Stream]
 	delete(s.streams, p.Stream)
+	delete(s.lsps, p.Stream)
 	s.mu.Unlock()
 	if stream != nil {
 		stream.cancel()

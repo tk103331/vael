@@ -55,6 +55,7 @@ const (
 	FeatureReplace   = "replace"    // replacement across the project
 	FeatureSymbols   = "symbols"    // the declarations of the project
 	FeatureClone     = "clone"      // cloning a repository into a folder
+	FeatureLSP       = "lsp"        // language servers the editor speaks to
 )
 
 // RequiredFeatures are what the editor needs of a core.

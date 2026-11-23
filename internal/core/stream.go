@@ -27,6 +27,9 @@ type Streaming interface {
 // Subscription is a stream of messages the core pushes.
 type Subscription interface {
 	Messages() <-chan Message
+	// Stream is the number the core knows the stream by, which requests
+	// about it carry.
+	Stream() uint64
 	Close() error
 }
 
@@ -302,6 +305,9 @@ func (sub *subscription) close() {
 	}
 	sub.mu.Unlock()
 }
+
+// Stream is the number the core knows the stream by.
+func (sub *subscription) Stream() uint64 { return sub.streamID }
 
 // Close ends the subscription: the core stops sending, and the work it does
 // for it ends.

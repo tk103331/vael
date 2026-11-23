@@ -409,7 +409,7 @@ func (a *app) restoreFiles(s workspace.Session) {
 				selected = len(tabs)
 			}
 			tab := &fileTab{path: file.Path, original: text, state: state}
-			tab.state.OnDefinition = func(offset int) { a.goToDefinition(tab, offset) }
+			tab.state.OnDefinition = func(offset int) { a.defineAt(tab, offset) }
 			tabs = append(tabs, tab)
 		}
 		a.update(func() {

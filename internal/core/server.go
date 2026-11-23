@@ -24,7 +24,9 @@ type Server struct {
 	write      func(Message) error
 	streams    map[uint64]*serverStream
 	nextStream uint64
-	closed     bool
+	// lsps are the language servers the streams run.
+	lsps   map[uint64]*lspProcess
+	closed bool
 	// ctx is the life of the server: what the streams it holds last as
 	// long as, not as long as the request that began them.
 	ctx context.Context
@@ -156,6 +158,12 @@ func (s *Server) answer(ctx context.Context, m Message) {
 		return
 	case "run":
 		s.startRun(ctx, m)
+		return
+	case "lsp":
+		s.startLSPStream(ctx, m)
+		return
+	case "lsp/write":
+		s.writeLSP(m)
 		return
 	}
 	result, err := s.service.Handle(ctx, m.Method, m.Params)

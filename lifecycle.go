@@ -271,4 +271,5 @@ func (a *app) shutdown() {
 		t.term.Close()
 	}
 	a.stopAgent()
+	a.stopLSP()
 }

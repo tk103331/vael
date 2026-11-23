@@ -192,6 +192,12 @@ type app struct {
 	agentLines                       []agentLine
 	agentInput                       string
 	pluginDemoClick                  string
+	lspSet                           lspSettings
+	lspPath                          string
+	lsps                             map[string]*lspSession
+	pendingCaret                     map[string]editor.Pos
+	lspOn                            map[string]bool
+	lspCmd                           map[string]*string
 	settingsSection                  string
 	agentAddOpen                     bool
 	agentAddName, agentAddCommand    string
@@ -209,7 +215,7 @@ type app struct {
 
 func newApp() *app {
 	ctx, cancel := context.WithCancel(context.Background())
-	return &app{projectCtx: ctx, projectCancel: cancel, backend: core.NewLocal(), sideWidth: 248, rightShare: 72, logShare: 74, rightSection: "outline", bottomTab: "terminal", editorShare: 62, stamps: map[string]workspace.Stamp{}, stale: map[string]string{}, commandUses: map[string]int{}, entries: map[string][]workspace.Entry{}, expanded: map[string]bool{}, loading: map[string]bool{}, sidebar: true, section: "files", guides: true, autoClose: true, numbers: true, selected: -1, termSelected: -1, logLocalOpen: true, logRemoteOpen: true, logRemoteClosed: map[string]bool{}, logGraphOn: true, logDetailOn: true}
+	return &app{projectCtx: ctx, projectCancel: cancel, backend: core.NewLocal(), lsps: map[string]*lspSession{}, pendingCaret: map[string]editor.Pos{}, sideWidth: 248, rightShare: 72, logShare: 74, rightSection: "outline", bottomTab: "terminal", editorShare: 62, stamps: map[string]workspace.Stamp{}, stale: map[string]string{}, commandUses: map[string]int{}, entries: map[string][]workspace.Entry{}, expanded: map[string]bool{}, loading: map[string]bool{}, sidebar: true, section: "files", guides: true, autoClose: true, numbers: true, selected: -1, termSelected: -1, logLocalOpen: true, logRemoteOpen: true, logRemoteClosed: map[string]bool{}, logGraphOn: true, logDetailOn: true}
 }
 func (a *app) active() *fileTab {
 	if a.selected < 0 || a.selected >= len(a.tabs) {
@@ -396,6 +402,7 @@ func (a *app) openFileAt(path string, start, end int) {
 			if start >= 0 {
 				f.state.Select(start, end)
 			}
+			a.takeCaret(path, f)
 			return
 		}
 	}
@@ -431,7 +438,7 @@ func (a *app) openFileAt(path string, start, end int) {
 			b.SetLanguage(editor.LanguageFor(path))
 			font := ui.Font{Family: "monospace", Size: a.fontSize}
 			tab := &fileTab{path: path, original: text, state: &editor.State{Buffer: b, KeepScrollbars: true, Font: font}}
-			tab.state.OnDefinition = func(offset int) { a.goToDefinition(tab, offset) }
+			tab.state.OnDefinition = func(offset int) { a.defineAt(tab, offset) }
 			tab.state.ContextMenu = func(m *ui.Menu) {
 				if m.Item("复制路径").Chosen() {
 					mygo.Clipboard.WriteText(tab.path)
@@ -453,9 +460,11 @@ func (a *app) openFileAt(path string, start, end int) {
 			a.watchVersion++
 			a.updateWatchTargets()
 			a.refreshDiffBase(a.tabs[a.selected])
+			a.lspDidOpen(a.tabs[a.selected])
 			if start >= 0 {
 				a.tabs[a.selected].state.Select(start, end)
 			}
+			a.takeCaret(path, a.tabs[a.selected])
 		})
 	}()
 }
@@ -484,6 +493,7 @@ func (a *app) save() {
 				f.original = text
 				a.stamps[f.path] = stamp
 				delete(a.stale, f.path)
+				a.lspDidSave(f, text)
 				if text == f.state.Buffer.String() {
 					f.state.Buffer.MarkSaved()
 				}
@@ -508,6 +518,7 @@ func (a *app) closeTab(index int) {
 					a.selected = len(a.tabs) - 1
 				}
 				delete(a.stamps, f.path)
+				a.lspDidClose(f)
 				a.updateWatchTargets()
 				return
 			}

@@ -14,6 +14,7 @@ const (
 	settingsLook   = "look"
 	settingsEditor = "editor"
 	settingsEnv    = "env"
+	settingsLSP    = "lsp"
 	settingsAgent  = "agent"
 )
 
@@ -32,6 +33,7 @@ func (a *app) settingsView(c *ui.Context, p palette) {
 				a.settingsTab(c, p, "外观", settingsLook)
 				a.settingsTab(c, p, "编辑器", settingsEditor)
 				a.settingsTab(c, p, "环境", settingsEnv)
+				a.settingsTab(c, p, "语言服务器", settingsLSP)
 				a.settingsTab(c, p, "ACP Agent", settingsAgent)
 			})
 			ui.Divider(c)
@@ -42,6 +44,8 @@ func (a *app) settingsView(c *ui.Context, p palette) {
 						a.editorSettings(c, p)
 					case settingsEnv:
 						a.environmentsSettings(c, p)
+					case settingsLSP:
+						a.lspSettingsView(c, p)
 					case settingsAgent:
 						a.agentsSettings(c, p)
 					default:
@@ -58,6 +62,9 @@ func (a *app) settingsView(c *ui.Context, p palette) {
 		})
 	})
 	if !open {
+		if a.settingsOpen {
+			a.applyLSPSettings()
+		}
 		a.settingsOpen = false
 	}
 }

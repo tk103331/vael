@@ -557,6 +557,17 @@ func (a *app) view(c *ui.Context) {
 					branch = "⑂ " + a.repo.Branch + fmt.Sprintf("  ·  %d 项变更", len(a.repo.Changes))
 				}
 				ui.Text(c, branch).FontSize(11).TextColor(p.muted)
+				// What the language server of the file says, and a way to
+				// its settings.
+				if text := a.lspStatus(); text != "" {
+					label := ui.Text(c, text).FontSize(11).TextColor(p.muted)
+					if problems := a.lspProblemText(); problems != "" {
+						label.Tooltip(problems)
+					}
+					if a.lspProblems() > 0 {
+						label.Cursor(ui.CursorPointer)
+					}
+				}
 				if f := a.active(); f != nil {
 					path := f.path
 					if rel, err := a.relativePath(a.root, path); err == nil {
@@ -841,6 +852,7 @@ func (a *app) editorView(c *ui.Context, p palette) {
 		return
 	}
 	a.styleEditor(f.state)
+	a.lspEditor(f)
 	editor.View(c, f.state).FillWidth().Grow(1).AutoFocus()
 }
 
