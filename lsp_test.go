@@ -224,3 +224,44 @@ func TestTheLanguageServerAnswersTheEditor(t *testing.T) {
 		t.Fatalf("the caret is at %+v", pos)
 	}
 }
+
+func TestTheLanguageServersOpenFromTheBar(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(root+"/main.go", []byte("package main\n\nfunc main() {\n}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	a, queue := lspTestApp(t, root)
+	a.sidebar = true
+	a.openFile(root + "/main.go")
+	pumpUntil(t, queue, func() bool { return a.tabOf(root+"/main.go") != nil })
+	tab := a.tabOf(root + "/main.go")
+	pumpUntil(t, queue, func() bool { return len(tab.state.Diagnostics()) > 0 })
+
+	tt := ui.NewTester(a.view, 1280, 840)
+	tt.Frame()
+	if err := tt.Click("语言服务器"); err != nil {
+		t.Fatal(err)
+	}
+	if !a.lspMenuOpen {
+		t.Fatal("the panel of the language servers did not open")
+	}
+	tt.Frame()
+	for _, text := range []string{"语言服务器", "1 个在运行 · 1 问题", "go · 就绪 · 1 问题"} {
+		found := false
+		for _, shown := range tt.Texts() {
+			if shown == text {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("%q is not drawn: %v", text, tt.Texts())
+		}
+	}
+	// A row goes to the settings of the servers.
+	if err := tt.Click("gopls"); err != nil {
+		t.Fatal(err)
+	}
+	if !a.settingsOpen || a.settingsSection != settingsLSP {
+		t.Fatalf("the settings did not open: %v %q", a.settingsOpen, a.settingsSection)
+	}
+}

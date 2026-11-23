@@ -1421,3 +1421,111 @@ func (a *app) takeCaret(path string, tab *fileTab) {
 	delete(a.pendingCaret, path)
 	tab.state.GoTo(caret)
 }
+
+// lspTotals is how many language servers run, and how many problems they
+// found in all.
+func (a *app) lspTotals() (int, int) {
+	running, problems := 0, 0
+	for _, session := range a.lsps {
+		status, _, found := session.state()
+		if status == "就绪" || status == "启动中" {
+			running++
+		}
+		problems += found
+	}
+	return running, problems
+}
+
+// lspTooltip is what the button of the language servers says on hover.
+func (a *app) lspTooltip(running, problems int) string {
+	switch {
+	case running == 0:
+		return "语言服务器：未启动"
+	case problems > 0:
+		return fmt.Sprintf("语言服务器：%d 个在运行，%d 个问题", running, problems)
+	}
+	return fmt.Sprintf("语言服务器：%d 个在运行", running)
+}
+
+// lspMenu is the panel the button of the language servers opens: what each
+// server of a language does.
+func (a *app) lspMenu(c *ui.Context, p palette) {
+	ui.Column(c).Width(320).Padding(6).Gap(2).Children(func() {
+		ui.Row(c).FillWidth().Height(26).Padding(0, 6).Gap(6).AlignItems(ui.Center).Children(func() {
+			ui.Text(c, "语言服务器").FontSize(11.5).FontWeight(650).TextColor(p.text).Grow(1)
+			if running, problems := a.lspTotals(); running > 0 {
+				detail := strconv.Itoa(running) + " 个在运行"
+				if problems > 0 {
+					detail += " · " + strconv.Itoa(problems) + " 问题"
+				}
+				ui.Text(c, detail).FontSize(10).TextColor(p.muted)
+			}
+		})
+		if len(a.lspSet.Languages) == 0 {
+			ui.Text(c, "设置没有读入：语言服务器不可用。").FontSize(10.5).
+				TextColor(p.muted).Padding(4, 6)
+		}
+		for _, server := range lspRegistry {
+			server := server
+			setting, known := a.lspSet.Languages[server.Language]
+			if !known {
+				continue
+			}
+			session := a.lsps[server.Language]
+			status, problem, problems := "未启动", "", 0
+			if session != nil {
+				status, problem, problems = session.state()
+			}
+			row := ui.ButtonBase(c).FillWidth().Height(34).Padding(0, 6).Gap(8).
+				Radius(5).AlignItems(ui.Center).Label(server.Name)
+			if row.Hovered() {
+				row.Background(p.edge)
+			}
+			row.Children(func() {
+				a.lspMark(c, p, status, setting.Enabled)
+				ui.Column(c).Grow(1).MinWidth(0).Gap(1).Children(func() {
+					ui.Text(c, server.Name).FontSize(11.5).TextColor(p.text).SingleLine().Ellipsis("…")
+					detail := server.Language + " · " + status
+					if !setting.Enabled {
+						detail = server.Language + " · 已关闭"
+					}
+					if problems > 0 {
+						detail += fmt.Sprintf(" · %d 问题", problems)
+					}
+					if problem != "" {
+						detail = server.Language + " · " + firstLine(problem, 60)
+					}
+					ui.Text(c, detail).FontSize(10).TextColor(p.muted).SingleLine().Ellipsis("…")
+				})
+			})
+			if row.Clicked() {
+				a.lspMenuOpen = false
+				a.settingsOpen = true
+				a.settingsSection = settingsLSP
+			}
+		}
+		ui.Divider(c).Margin(4, 0)
+		a.agentMenuItem(c, p, gearIcon, "语言服务器设置…", func() {
+			a.lspMenuOpen = false
+			a.settingsOpen = true
+			a.settingsSection = settingsLSP
+		})
+	})
+}
+
+// lspMark is how a server does: a tick when it is ready, a dot while it
+// starts, a cross when it failed, and a hollow dot when it does not run.
+func (a *app) lspMark(c *ui.Context, p palette, status string, enabled bool) {
+	switch {
+	case !enabled:
+		ui.Box(c).Size(7, 7).Radius(3.5).Border(1, p.muted)
+	case status == "就绪":
+		ui.Icon(c, checkIcon).Size(11, 11).TextColor(p.success)
+	case status == "启动中":
+		ui.Box(c).Size(7, 7).Radius(3.5).Background(p.accent)
+	case status == "错误":
+		ui.Icon(c, xIcon).Size(11, 11).TextColor(p.danger)
+	default:
+		ui.Box(c).Size(7, 7).Radius(3.5).Border(1, p.muted)
+	}
+}

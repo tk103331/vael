@@ -197,6 +197,7 @@ type app struct {
 	lsps                             map[string]*lspSession
 	pendingCaret                     map[string]editor.Pos
 	lspOn                            map[string]bool
+	lspMenuOpen                      bool
 	lspCmd                           map[string]*string
 	settingsSection                  string
 	agentAddOpen                     bool

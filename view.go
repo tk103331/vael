@@ -75,6 +75,7 @@ var branchIcon = lineIcon(`<line x1="6" y1="3" x2="6" y2="15"/><circle cx="18" c
 var eyeIcon = lineIcon(`<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>`)
 var graphIcon = lineIcon(`<circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="12" r="2.5"/><path d="M6 8.5v7M8.5 6H14a2 2 0 0 1 2 2v1.5"/>`)
 var commitIcon = lineIcon(`<circle cx="12" cy="12" r="3.4"/><line x1="2" y1="12" x2="8.6" y2="12"/><line x1="15.4" y1="12" x2="22" y2="12"/>`)
+var lspIcon = lineIcon(`<polyline points="3 12 7 12 10 5 14 19 17 12 21 12"/>`)
 var alertIcon = lineIcon(`<path d="M12 3 2 21h20L12 3z"/><line x1="12" y1="9" x2="12" y2="14"/><line x1="12" y1="17.5" x2="12.01" y2="17.5"/>`)
 var agentIcon = lineIcon(`<path d="M12 3l1.7 4.3L18 9l-4.3 1.7L12 15l-1.7-4.3L6 9l4.3-1.7z"/><path d="M18 15l.9 2.1L21 18l-2.1.9L18 21l-.9-2.1L15 18l2.1-.9z"/>`)
 var symbolsIcon = lineIcon(`<circle cx="12" cy="12" r="3"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3M5 5l2 2m10 10 2 2M19 5l-2 2M7 17l-2 2"/>`)
@@ -100,6 +101,34 @@ func (a *app) activityView(c *ui.Context, p palette) {
 				}
 			})
 		}
+		// The language servers, at the bottom of the bar: a click opens
+		// what each of them does, as an IDE's status widget does.
+		ui.Spacer(c)
+		running, problems := a.lspTotals()
+		lsp := ui.ButtonBase(c).Size(28, 28).Radius(5).Center().Label("语言服务器")
+		if a.lspMenuOpen {
+			lsp.Background(p.selected)
+		} else if lsp.Hovered() {
+			lsp.Background(p.edge)
+		}
+		color := p.muted
+		if problems > 0 {
+			color = p.warn
+		}
+		lsp.Children(func() {
+			ui.Column(c).Fill().Center().Gap(0).Children(func() {
+				ui.Icon(c, lspIcon).Size(17, 17).TextColor(color)
+				if problems > 0 {
+					ui.Textf(c, "%d", problems).FontSize(8).FontWeight(700).
+						TextColor(color).FontFeatures("tnum")
+				}
+			})
+		})
+		lsp.Tooltip(a.lspTooltip(running, problems))
+		if lsp.Clicked() {
+			a.lspMenuOpen = !a.lspMenuOpen
+		}
+		ui.Popover(c, lsp, &a.lspMenuOpen, func() { a.lspMenu(c, p) })
 	})
 }
 
