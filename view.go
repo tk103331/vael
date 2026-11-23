@@ -887,6 +887,7 @@ func (a *app) editorView(c *ui.Context, p palette) {
 // styleEditor puts the settings of the editor on a file's state, so that
 // a change in them shows at once in every tab.
 func (a *app) styleEditor(st *editor.State) {
+	st.Font = a.editorFont()
 	st.SoftWrap = a.wrap
 	st.TabSize = a.tabSize
 	st.Indent = editor.IndentStyle(a.indent)

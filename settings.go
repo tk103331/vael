@@ -211,6 +211,29 @@ func (a *app) lookSettings(c *ui.Context, p palette) {
 				}
 			}
 		})
+		a.settingsRow(c, p, "字体", "编辑器的等宽字体", func() {
+			b := ui.ButtonBase(c).Height(24).Padding(0, 9).Radius(5).Gap(4).
+				AlignItems(ui.Center).Label("字体：" + a.fontName())
+			if a.fontMenuOpen {
+				b.Background(p.selected)
+			} else if b.Hovered() {
+				b.Background(p.edge)
+			}
+			b.Children(func() {
+				ui.Text(c, a.fontName()).FontSize(11.5).TextColor(p.text).SingleLine().Ellipsis("…")
+				ui.Icon(c, chevronDownIcon).Size(9, 9).TextColor(p.muted)
+			})
+			if b.Clicked() {
+				a.fontMenuOpen = !a.fontMenuOpen
+				a.fontQuery = ""
+				if a.fontMenuOpen {
+					// The families of the system are asked for once, and
+					// only when the list shows: it takes a moment.
+					a.monospacedFonts()
+				}
+			}
+			ui.Popover(c, b, &a.fontMenuOpen, func() { a.fontMenu(c, p) })
+		})
 		a.settingsRow(c, p, "字号", "编辑器的字号，9 到 24", func() {
 			if iconButton(c, minusIcon, "缩小字号", false, p) {
 				a.zoom(-1)

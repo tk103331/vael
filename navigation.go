@@ -326,7 +326,7 @@ func (a *app) snapshot() workspace.Session {
 	s := workspace.Session{Root: a.root, SideWidth: a.sideWidth, EditorShare: a.editorShare, Sidebar: a.sidebar, Terminal: a.showBottom, RightPanel: a.rightPanel, Dark: a.dark, Wrap: a.wrap, Section: a.section, FontSize: a.fontSize,
 		TabSize: a.tabSize, Indent: a.indent, Whitespace: a.whitespace, LineHeight: a.lineHeight,
 		NoGuides: !a.guides, NoAutoClose: !a.autoClose, NoNumbers: !a.numbers,
-		Theme: a.themeID, Icons: a.iconID}
+		Theme: a.themeID, Icons: a.iconID, FontFamily: a.fontFamily}
 	s.Recent = append([]string(nil), a.recentFiles...)
 	if a.connection != nil {
 		s.ConnectionKind = a.connection.Kind
@@ -354,6 +354,9 @@ func (a *app) applyLayout(s workspace.Session) {
 	a.setTheme(a.themeID)
 	if s.Icons != "" {
 		a.iconID = s.Icons
+	}
+	if s.FontFamily != "" {
+		a.fontFamily = s.FontFamily
 	}
 	a.recentFiles = append([]string(nil), s.Recent...)
 	if s.SideWidth >= 160 && s.SideWidth <= 640 {

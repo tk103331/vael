@@ -13,10 +13,25 @@ import (
 // text before the user zooms.
 const DefaultFontSize = 13
 
+// editorFont is the font of the text the editor, the differences and the
+// terminal draw: the family the settings chose, and its size.
+func (a *app) editorFont() ui.Font {
+	return ui.Font{Family: a.fontFamilyName(), Size: a.fontSize}
+}
+
+// fontFamilyName is the family the settings chose, the system's monospaced
+// one when none.
+func (a *app) fontFamilyName() string {
+	if a.fontFamily == "" {
+		return "monospace"
+	}
+	return a.fontFamily
+}
+
 // applyFontSize tells every open editor, diff and terminal what size the
 // text is now. New ones take the size as they are made.
 func (a *app) applyFontSize() {
-	font := ui.Font{Family: "monospace", Size: a.fontSize}
+	font := a.editorFont()
 	for _, f := range a.tabs {
 		if f.state != nil {
 			f.state.Font = font
@@ -26,7 +41,7 @@ func (a *app) applyFontSize() {
 		}
 	}
 	for _, t := range a.terms {
-		t.term.SetFont(terminal.Font{Size: a.fontSize})
+		t.term.SetFont(terminal.Font{Family: a.fontFamilyName(), Size: a.fontSize})
 	}
 }
 
@@ -194,4 +209,74 @@ func (a *app) breadcrumb(c *ui.Context, p palette) {
 			}
 		}
 	})
+}
+
+// fontName is what a family is called in the settings: the system's
+// monospaced font has a name of its own.
+func (a *app) fontName() string {
+	if a.fontFamilyName() == "monospace" {
+		return "默认等宽"
+	}
+	return a.fontFamilyName()
+}
+
+// monospacedFonts lists the families the settings offer: the monospaced
+// ones, which an editor is, and the app's own if it registered some.
+func (a *app) monospacedFonts() []ui.FontFamily {
+	if a.fontFamilies == nil {
+		all := ui.FontFamilies()
+		for _, family := range all {
+			if family.Monospaced || family.Registered {
+				a.fontFamilies = append(a.fontFamilies, family)
+			}
+		}
+	}
+	return a.fontFamilies
+}
+
+// fontMenu is the list of the fonts the editor can take.
+func (a *app) fontMenu(c *ui.Context, p palette) {
+	ui.Column(c).Width(280).Padding(6).Gap(4).Children(func() {
+		ui.TextInput(c, &a.fontQuery).FillWidth().Height(26).Padding(2, 6).
+			Placeholder("搜索字体…").Label("搜索字体").AutoFocus()
+		ui.Scroll(c).FillWidth().MaxHeight(240).Children(func() {
+			ui.Column(c).FillWidth().Gap(1).Children(func() {
+				query := strings.ToLower(strings.TrimSpace(a.fontQuery))
+				a.fontOption(c, p, "默认等宽", "monospace", query == "" || strings.Contains("默认等宽", query))
+				for _, family := range a.monospacedFonts() {
+					name := family.Name
+					if !strings.Contains(strings.ToLower(name), query) {
+						continue
+					}
+					a.fontOption(c, p, name, name, true)
+				}
+			})
+		})
+	})
+}
+
+// fontOption is a font of the list, chosen or not.
+func (a *app) fontOption(c *ui.Context, p palette, label, family string, shown bool) {
+	if !shown {
+		return
+	}
+	chosen := a.fontFamilyName() == family
+	b := ui.ButtonBase(c).FillWidth().Height(26).Padding(0, 8).Gap(6).Radius(5).
+		AlignItems(ui.Center).Label("字体：" + label)
+	if chosen {
+		b.Background(p.selected)
+	} else if b.Hovered() {
+		b.Background(p.edge)
+	}
+	b.Children(func() {
+		ui.Text(c, label).FontSize(12).TextColor(p.text).Grow(1).SingleLine().Ellipsis("…")
+		if chosen {
+			ui.Icon(c, checkIcon).Size(11, 11).TextColor(p.accent)
+		}
+	})
+	if b.Clicked() {
+		a.fontMenuOpen = false
+		a.fontFamily = family
+		a.applyFontSize()
+	}
 }

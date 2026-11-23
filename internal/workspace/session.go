@@ -35,6 +35,9 @@ type Session struct {
 	// of files; Dark is what a session from before them has.
 	Theme string
 	Icons string
+	// FontFamily is the family of the editor's text; the system's
+	// monospaced one when empty.
+	FontFamily string
 }
 
 func SessionPath() (string, error) {
