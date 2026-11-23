@@ -108,6 +108,8 @@ func (a *app) menus() {
 					a.reloadFile(f)
 				}
 			}),
+			item("代码操作（快速修复）…", "CmdOrCtrl+.", a.quickFixes),
+			item("查找引用…", "Shift+F12", a.findReferences),
 			item("格式化文件", "CmdOrCtrl+Shift+I", a.lspFormat),
 			item("语言服务器设置…", "", func() {
 				a.settingsOpen = true

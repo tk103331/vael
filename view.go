@@ -625,6 +625,8 @@ func (a *app) view(c *ui.Context) {
 			})
 		}
 	})
+	a.actionView(c, p)
+	a.referenceView(c, p)
 	a.symbolPromptView(c, p)
 	a.dialogs(c, p)
 	a.projectPromptView(c, p)

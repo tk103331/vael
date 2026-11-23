@@ -31,6 +31,8 @@ func (a *app) commands() []command {
 		{title: "文件：新建文件…", hint: "在项目根目录创建", run: func() { a.prompt = &namePrompt{} }},
 		{title: "文件：保存", hint: "保存当前文件", run: a.save},
 		{title: "文件：关闭标签页", hint: "关闭当前文件", run: func() { a.closeTab(a.selected) }},
+		{title: "代码：快速修复…", hint: "CmdOrCtrl+.", run: a.quickFixes},
+		{title: "代码：查找引用…", hint: "Shift+F12", run: a.findReferences},
 		{title: "代码：重命名符号…", hint: "F2，经语言服务器", run: a.renameSymbol},
 		{title: "文件：重命名当前文件…", hint: "", run: a.renameActiveFile},
 		{title: "搜索：全部替换…", hint: "把项目中的查询全部替换", run: func() { a.sidebar = true; a.section = "search" }},

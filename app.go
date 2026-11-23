@@ -207,6 +207,8 @@ type app struct {
 	lastActive                       string
 	lastActiveTab                    *fileTab
 	symbolPrompt                     *symbolRename
+	actions                          *actionList
+	refs                             *referenceList
 	lspSet                           lspSettings
 	lspPath                          string
 	lsps                             map[string]*lspSession

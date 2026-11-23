@@ -118,6 +118,42 @@ func TestLSPHelper(t *testing.T) {
 				"range":   map[string]any{"start": map[string]int{"line": 0, "character": 0}, "end": map[string]int{"line": 0, "character": 0}},
 				"newText": "// 已格式化\n",
 			}})
+		case "textDocument/codeAction":
+			var params struct {
+				TextDocument struct {
+					URI string `json:"uri"`
+				} `json:"textDocument"`
+			}
+			json.Unmarshal(message.Params, &params)
+			answer(message.ID, []any{
+				map[string]any{
+					"title": "改成 println",
+					"kind":  "quickfix",
+					"edit": map[string]any{"changes": map[string]any{
+						params.TextDocument.URI: []any{map[string]any{
+							"range":   map[string]any{"start": map[string]int{"line": 2, "character": 5}, "end": map[string]int{"line": 2, "character": 9}},
+							"newText": "println",
+						}},
+					}},
+				},
+				map[string]any{"title": "来一条命令", "command": map[string]any{"command": "fake.run", "arguments": []any{1}}},
+				nil,
+			})
+		case "textDocument/references":
+			var params struct {
+				TextDocument struct {
+					URI string `json:"uri"`
+				} `json:"textDocument"`
+			}
+			json.Unmarshal(message.Params, &params)
+			answer(message.ID, []any{
+				map[string]any{
+					"uri":   params.TextDocument.URI,
+					"range": map[string]any{"start": map[string]int{"line": 2, "character": 5}, "end": map[string]int{"line": 2, "character": 9}},
+				},
+			})
+		case "workspace/executeCommand":
+			answer(message.ID, nil)
 		case "textDocument/definition":
 			answer(message.ID, map[string]any{
 				"uri":   "file://" + root + "/other.go",
