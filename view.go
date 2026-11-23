@@ -625,6 +625,7 @@ func (a *app) view(c *ui.Context) {
 			})
 		}
 	})
+	a.symbolPromptView(c, p)
 	a.dialogs(c, p)
 	a.projectPromptView(c, p)
 	a.clonePromptView(c, p)
@@ -879,6 +880,7 @@ func (a *app) editorView(c *ui.Context, p palette) {
 		editor.DiffView(c, f.diff).FillWidth().Grow(1)
 		return
 	}
+	a.autoSaveOnChange(f)
 	a.styleEditor(f.state)
 	a.lspEditor(f)
 	editor.View(c, f.state).FillWidth().Grow(1).AutoFocus()

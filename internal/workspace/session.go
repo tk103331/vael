@@ -38,6 +38,12 @@ type Session struct {
 	// FontFamily is the family of the editor's text; the system's
 	// monospaced one when empty.
 	FontFamily string
+	// AutoSave is when a file saves itself: never, as it is left, or a
+	// moment after its text stops changing.
+	AutoSave     int
+	TrimOnSave   bool
+	FinalNewline bool
+	FormatOnSave bool
 }
 
 func SessionPath() (string, error) {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/egoist/mygo/ui"
@@ -200,7 +201,8 @@ func (a *app) quickOpenView(c *ui.Context, p palette) {
 	if !a.quickOpen {
 		return
 	}
-	matches := workspace.MatchFiles(a.index.Files, a.quickQuery, 80)
+	name, line := quickTarget(a.quickQuery)
+	matches := workspace.MatchFiles(a.index.Files, name, 80)
 	if a.quickQuery != a.quickShown {
 		// New results, new choice: the first match is what Enter opens.
 		a.quickShown = a.quickQuery
@@ -212,7 +214,8 @@ func (a *app) quickOpenView(c *ui.Context, p palette) {
 	ui.Modal(c, &a.quickOpen, func() {
 		ui.Column(c).Width(620).Padding(16).Gap(10).Children(func() {
 			ui.Text(c, "快速打开文件").FontSize(15).FontWeight(650)
-			input := ui.TextInput(c, &a.quickQuery).FillWidth().Placeholder("输入文件名或路径…").Label("快速打开文件名").AutoFocus()
+			input := ui.TextInput(c, &a.quickQuery).FillWidth().
+				Placeholder("文件名或路径，可加 :行号…").Label("快速打开文件名").AutoFocus()
 			if a.indexing {
 				ui.Text(c, "正在索引项目…").FontSize(11).TextColor(p.muted)
 			}
@@ -233,10 +236,10 @@ func (a *app) quickOpenView(c *ui.Context, p palette) {
 			})
 			if list.Submitted() && a.quickSelected >= 0 && a.quickSelected < len(matches) {
 				a.quickOpen = false
-				a.openFile(a.joinPath(a.root, matches[a.quickSelected]))
+				a.quickOpenFile(matches[a.quickSelected], line)
 			} else if input.Submitted() && len(matches) > 0 {
 				a.quickOpen = false
-				a.openFile(a.joinPath(a.root, matches[max(0, a.quickSelected)]))
+				a.quickOpenFile(matches[max(0, a.quickSelected)], line)
 			}
 			if len(matches) == 0 && !a.indexing {
 				ui.Text(c, "没有匹配的文件").FontSize(12).TextColor(p.muted)
@@ -326,7 +329,9 @@ func (a *app) snapshot() workspace.Session {
 	s := workspace.Session{Root: a.root, SideWidth: a.sideWidth, EditorShare: a.editorShare, Sidebar: a.sidebar, Terminal: a.showBottom, RightPanel: a.rightPanel, Dark: a.dark, Wrap: a.wrap, Section: a.section, FontSize: a.fontSize,
 		TabSize: a.tabSize, Indent: a.indent, Whitespace: a.whitespace, LineHeight: a.lineHeight,
 		NoGuides: !a.guides, NoAutoClose: !a.autoClose, NoNumbers: !a.numbers,
-		Theme: a.themeID, Icons: a.iconID, FontFamily: a.fontFamily}
+		Theme: a.themeID, Icons: a.iconID, FontFamily: a.fontFamily,
+		AutoSave: a.autoSave, TrimOnSave: a.trimOnSave, FinalNewline: a.finalNewline,
+		FormatOnSave: a.formatOnSave}
 	s.Recent = append([]string(nil), a.recentFiles...)
 	if a.connection != nil {
 		s.ConnectionKind = a.connection.Kind
@@ -358,6 +363,10 @@ func (a *app) applyLayout(s workspace.Session) {
 	if s.FontFamily != "" {
 		a.fontFamily = s.FontFamily
 	}
+	if s.AutoSave >= autoSaveOff && s.AutoSave <= autoSaveAfterDelay {
+		a.autoSave = s.AutoSave
+	}
+	a.trimOnSave, a.finalNewline, a.formatOnSave = s.TrimOnSave, s.FinalNewline, s.FormatOnSave
 	a.recentFiles = append([]string(nil), s.Recent...)
 	if s.SideWidth >= 160 && s.SideWidth <= 640 {
 		a.sideWidth = s.SideWidth
@@ -457,4 +466,28 @@ func (a *app) restoreFiles(s workspace.Session) {
 			}
 		})
 	}()
+}
+
+// quickTarget splits what is typed in the quick open into the file it finds
+// and the line to go to, as "main.go:42" says, as Sublime's Goto Anything
+// opens a file at a line.
+func quickTarget(query string) (string, int) {
+	at := strings.LastIndex(query, ":")
+	if at < 0 {
+		return query, 0
+	}
+	line, err := strconv.Atoi(strings.TrimSpace(query[at+1:]))
+	if err != nil || line <= 0 {
+		return query, 0
+	}
+	return strings.TrimSpace(query[:at]), line
+}
+
+// quickOpenFile opens what the quick open found, at the line it named.
+func (a *app) quickOpenFile(path string, line int) {
+	full := a.joinPath(a.root, path)
+	if line > 0 {
+		a.pendingCaret[full] = editor.Pos{Line: line - 1}
+	}
+	a.openFile(full)
 }

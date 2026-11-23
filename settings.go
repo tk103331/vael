@@ -308,6 +308,7 @@ func (a *app) editorSettings(c *ui.Context, p palette) {
 		a.settingsSwitch(c, p, "缩进参考线", "用竖线标出缩进层级", &a.guides)
 		a.settingsSwitch(c, p, "自动闭合括号", "输入括号或引号时成对插入", &a.autoClose)
 		a.settingsSwitch(c, p, "行号", "在左侧显示行号", &a.numbers)
+		a.savingSettings(c, p)
 	})
 }
 

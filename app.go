@@ -31,6 +31,9 @@ type fileTab struct {
 	indentWidth   int
 	indentVersion uint64
 	indentDone    bool
+	// autoSaveAt is the version of the text the automatic save is waiting
+	// on: a newer one waits for a save of its own.
+	autoSaveAt uint64
 }
 type shellTab struct {
 	term *terminal.Terminal
@@ -198,6 +201,12 @@ type app struct {
 	fontMenuOpen                     bool
 	fontQuery                        string
 	fontFamilies                     []ui.FontFamily
+	autoSave                         int
+	trimOnSave, finalNewline         bool
+	formatOnSave                     bool
+	lastActive                       string
+	lastActiveTab                    *fileTab
+	symbolPrompt                     *symbolRename
 	lspSet                           lspSettings
 	lspPath                          string
 	lsps                             map[string]*lspSession
@@ -479,35 +488,7 @@ func (a *app) save() {
 	if !a.requireProject() {
 		return
 	}
-	f := a.active()
-	if f == nil || f.state == nil || f.saving {
-		return
-	}
-	f.saving = true
-	text, original := f.state.Buffer.String(), f.original
-	generation := a.generation
-	backend := a.backend
-	ctx := a.projectCtx
-	go func() {
-		stamp, err := backend.Save(ctx, f.path, original, text)
-		a.update(func() {
-			if generation != a.generation {
-				return
-			}
-			f.saving = false
-			a.report(err)
-			if err == nil {
-				f.original = text
-				a.stamps[f.path] = stamp
-				delete(a.stale, f.path)
-				a.lspDidSave(f, text)
-				if text == f.state.Buffer.String() {
-					f.state.Buffer.MarkSaved()
-				}
-				a.refreshGit()
-			}
-		})
-	}()
+	a.saveTab(a.active())
 }
 func (a *app) closeTab(index int) {
 	if index < 0 || index >= len(a.tabs) {

@@ -1147,22 +1147,35 @@ func lspLocation(result json.RawMessage) (lspPlace, bool) {
 	return lspPlace{}, false
 }
 
-// lspFormat asks the server to format a document, and puts what it answers
-// in the buffer, in one change the editor can undo.
+// lspFormat asks the server to format the file that is open.
 func (a *app) lspFormat() {
 	tab := a.active()
 	if tab == nil || tab.state == nil || tab.diff != nil {
 		return
 	}
+	if !a.formatDocument(tab, nil) {
+		if a.lspServerFor(tab.path) == nil {
+			a.message = "这个文件没有语言服务器"
+		} else {
+			a.message = "语言服务器还没就绪"
+		}
+	}
+}
+
+// formatDocument asks the server of a file to format it, and calls done once
+// the buffer has what it answered. It is false when there is no server to
+// ask.
+func (a *app) formatDocument(tab *fileTab, done func()) bool {
+	if tab == nil || tab.state == nil || tab.diff != nil {
+		return false
+	}
 	server := a.lspServerFor(tab.path)
 	if server == nil {
-		a.message = "这个文件没有语言服务器"
-		return
+		return false
 	}
 	session := a.lsps[server.Language]
 	if session == nil || session.wire == nil {
-		a.message = "语言服务器还没就绪"
-		return
+		return false
 	}
 	text := tab.state.Buffer.String()
 	state := tab.state
@@ -1179,6 +1192,9 @@ func (a *app) lspFormat() {
 			NewText string   `json:"newText"`
 		}
 		if json.Unmarshal(result, &edits) != nil || len(edits) == 0 {
+			if done != nil {
+				done()
+			}
 			return
 		}
 		var changes []editor.Edit
@@ -1188,7 +1204,11 @@ func (a *app) lspFormat() {
 			changes = append(changes, editor.Edit{Start: start, End: end, Text: edit.NewText})
 		}
 		state.Buffer.Edit(changes...)
+		if done != nil {
+			done()
+		}
 	})
+	return true
 }
 
 // lspStatus is what the status bar says of the language servers.
