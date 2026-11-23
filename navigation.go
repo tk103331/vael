@@ -225,8 +225,9 @@ func (a *app) quickOpenView(c *ui.Context, p palette) {
 				path := matches[i]
 				b := ui.ButtonBase(c).FillWidth().Height(32).Padding(0, 8).Radius(5).Label(path).AlignItems(ui.Start)
 				b.Children(func() {
-					badge := glyphFor(path)
-					ui.Text(c, badge.text).FontSize(8.5).FontWeight(700).TextColor(badge.color(p)).FontFeatures("tnum").Width(24)
+					ui.Box(c).Width(24).Children(func() {
+						a.markView(c, p, a.markFor(path))
+					})
 					ui.Text(c, path).FontSize(12).TextColor(p.text).Grow(1).SingleLine().Ellipsis("…")
 				})
 			})
@@ -295,8 +296,9 @@ func (a *app) recentView(c *ui.Context, p palette) {
 				rel, _ := a.relativePath(a.root, path)
 				b := ui.ButtonBase(c).FillWidth().Height(34).Padding(0, 8).Radius(5).Label(rel).AlignItems(ui.Start)
 				b.Children(func() {
-					badge := glyphFor(path)
-					ui.Text(c, badge.text).FontSize(8.5).FontWeight(700).TextColor(badge.color(p)).FontFeatures("tnum").Width(24)
+					ui.Box(c).Width(24).Children(func() {
+						a.markView(c, p, a.markFor(path))
+					})
 					ui.Column(c).Grow(1).Gap(1).Children(func() {
 						ui.Text(c, filepath.Base(path)).FontSize(12).TextColor(p.text).SingleLine().Ellipsis("…")
 						if dir := filepath.Dir(rel); dir != "" && dir != "." {
@@ -323,7 +325,8 @@ func (a *app) recentView(c *ui.Context, p palette) {
 func (a *app) snapshot() workspace.Session {
 	s := workspace.Session{Root: a.root, SideWidth: a.sideWidth, EditorShare: a.editorShare, Sidebar: a.sidebar, Terminal: a.showBottom, RightPanel: a.rightPanel, Dark: a.dark, Wrap: a.wrap, Section: a.section, FontSize: a.fontSize,
 		TabSize: a.tabSize, Indent: a.indent, Whitespace: a.whitespace, LineHeight: a.lineHeight,
-		NoGuides: !a.guides, NoAutoClose: !a.autoClose, NoNumbers: !a.numbers}
+		NoGuides: !a.guides, NoAutoClose: !a.autoClose, NoNumbers: !a.numbers,
+		Theme: a.themeID, Icons: a.iconID}
 	s.Recent = append([]string(nil), a.recentFiles...)
 	if a.connection != nil {
 		s.ConnectionKind = a.connection.Kind
@@ -343,6 +346,15 @@ func (a *app) snapshot() workspace.Session {
 }
 func (a *app) applyLayout(s workspace.Session) {
 	a.dark, a.wrap, a.sidebar, a.showBottom, a.rightPanel = s.Dark, s.Wrap, s.Sidebar, s.Terminal, s.RightPanel
+	// A session of before themes has only whether it was dark.
+	a.themeID = s.Theme
+	if s.Theme == "" {
+		a.themeID = themeOfDark("vael-dark", s.Dark)
+	}
+	a.setTheme(a.themeID)
+	if s.Icons != "" {
+		a.iconID = s.Icons
+	}
 	a.recentFiles = append([]string(nil), s.Recent...)
 	if s.SideWidth >= 160 && s.SideWidth <= 640 {
 		a.sideWidth = s.SideWidth

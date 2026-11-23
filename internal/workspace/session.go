@@ -31,6 +31,10 @@ type Session struct {
 	NoGuides    bool
 	NoAutoClose bool
 	NoNumbers   bool
+	// Theme is the theme of the window, and Icons the theme of the marks
+	// of files; Dark is what a session from before them has.
+	Theme string
+	Icons string
 }
 
 func SessionPath() (string, error) {

@@ -75,6 +75,12 @@ var branchIcon = lineIcon(`<line x1="6" y1="3" x2="6" y2="15"/><circle cx="18" c
 var eyeIcon = lineIcon(`<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>`)
 var graphIcon = lineIcon(`<circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="12" r="2.5"/><path d="M6 8.5v7M8.5 6H14a2 2 0 0 1 2 2v1.5"/>`)
 var commitIcon = lineIcon(`<circle cx="12" cy="12" r="3.4"/><line x1="2" y1="12" x2="8.6" y2="12"/><line x1="15.4" y1="12" x2="22" y2="12"/>`)
+var codeIcon = lineIcon(`<polyline points="8 6 3 12 8 18"/><polyline points="16 6 21 12 16 18"/>`)
+var dataIcon = lineIcon(`<ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v6c0 1.7 3.1 3 7 3s7-1.3 7-3V6"/><path d="M5 12v6c0 1.7 3.1 3 7 3s7-1.3 7-3v-6"/>`)
+var docIcon = lineIcon(`<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="13" y2="17"/>`)
+var styleIcon = lineIcon(`<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/>`)
+var markupIcon = lineIcon(`<polyline points="9 6 4 12 9 18"/><polyline points="15 6 20 12 15 18"/><line x1="13" y1="4" x2="11" y2="20"/>`)
+var imageIcon = lineIcon(`<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m21 16-5-5-8 8"/>`)
 var lspIcon = lineIcon(`<polyline points="3 12 7 12 10 5 14 19 17 12 21 12"/>`)
 var alertIcon = lineIcon(`<path d="M12 3 2 21h20L12 3z"/><line x1="12" y1="9" x2="12" y2="14"/><line x1="12" y1="17.5" x2="12.01" y2="17.5"/>`)
 var agentIcon = lineIcon(`<path d="M12 3l1.7 4.3L18 9l-4.3 1.7L12 15l-1.7-4.3L6 9l4.3-1.7z"/><path d="M18 15l.9 2.1L21 18l-2.1.9L18 21l-.9-2.1L15 18l2.1-.9z"/>`)
@@ -389,10 +395,7 @@ func (a *app) editorTab(c *ui.Context, p palette, i int, tab *fileTab) {
 }
 
 func (a *app) colors() palette {
-	if a.dark {
-		return palette{ui.Hex("#141418"), ui.Hex("#232328"), ui.Hex("#ececf0"), ui.Hex("#a9a9b4"), ui.Hex("#34343d"), ui.Hex("#6b93ff"), ui.Hex("#30394f"), ui.Hex("#f0a33a"), ui.Hex("#f0a33a").Alpha(0.14), ui.Hex("#4fd17a"), ui.Hex("#ff6961")}
-	}
-	return palette{ui.Hex("#eceef4"), ui.Hex("#ffffff"), ui.Hex("#1d1d1f"), ui.Hex("#6e6e78"), ui.Hex("#e1e3eb"), ui.Hex("#3b6cf6"), ui.Hex("#e7edff"), ui.Hex("#c27b0f"), ui.Hex("#c27b0f").Alpha(0.12), ui.Hex("#2fa84f"), ui.Hex("#d93a35")}
+	return a.theme().Palette
 }
 func quiet(c *ui.Context, text string, selected bool, p palette) bool {
 	return quietRow(c, text, selected, p).Clicked()
@@ -412,12 +415,7 @@ func quietRow(c *ui.Context, text string, selected bool, p palette) ui.Element {
 }
 func (a *app) view(c *ui.Context) {
 	p := a.colors()
-	theme := ui.LightTheme()
-	if a.dark {
-		theme = ui.DarkTheme()
-	}
-	theme.Background, theme.Surface, theme.Accent, theme.Text = p.card, p.card, p.accent, p.text
-	c.SetTheme(theme)
+	c.SetTheme(a.editorTheme())
 	ui.Column(c).Fill().Background(p.wash).Children(func() {
 		ui.Row(c).FillWidth().Height(36).AlignItems(ui.Center).Gap(8).Padding(0, 0, 0, 12).Children(func() {
 			mac := runtime.GOOS == "darwin"
@@ -519,7 +517,7 @@ func (a *app) view(c *ui.Context) {
 				themeTip, themeIcon = "切换到浅色", sunIcon
 			}
 			if iconButton(c, themeIcon, themeTip, false, p) {
-				a.dark = !a.dark
+				a.toggleDark()
 			}
 			if !mac {
 				ui.Box(c).Width(2)
@@ -743,9 +741,10 @@ func (a *app) tree(c *ui.Context, p palette, dir string, depth int, width float3
 				ui.Icon(c, folderIcon).Size(13, 13).TextColor(p.accent)
 				ui.Text(c, e.Name).FontSize(12).TextColor(p.text).Grow(1).SingleLine().Ellipsis("…")
 			} else {
-				badge := glyphFor(e.Name)
 				nameColor, tip := a.treeColor(e.Path, p)
-				ui.Text(c, badge.text).FontSize(8.5).FontWeight(700).TextColor(badge.color(p)).FontFeatures("tnum").Width(22)
+				ui.Box(c).Width(22).Children(func() {
+					a.markView(c, p, a.markFor(e.Name))
+				})
 				name := ui.Text(c, e.Name).FontSize(12).TextColor(nameColor).Grow(1).SingleLine().Ellipsis("…")
 				if tip != "" {
 					name.Tooltip(e.Name + " · " + tip)

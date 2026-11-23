@@ -76,9 +76,10 @@ func TestAPluginCannotChooseItsOwnColours(t *testing.T) {
 	// right in both themes.
 	light := newApp()
 	defer light.shutdown()
+	light.setTheme("vael-light")
 	dark := newApp()
 	defer dark.shutdown()
-	dark.dark = true
+	dark.setTheme("vael-dark")
 	for _, app := range []*app{light, dark} {
 		nodes, err := parsePluginView([]byte(`[
 			{"type":"text","text":"a","tone":"danger"},

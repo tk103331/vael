@@ -67,11 +67,11 @@ func TestSettingsDialogChangesThePreferences(t *testing.T) {
 	if a.fontSize != 14 {
 		t.Fatalf("size %v", a.fontSize)
 	}
-	if err := tt.Click("深色"); err != nil {
+	if err := tt.Click("主题：Vael 浅色"); err != nil {
 		t.Fatal(err)
 	}
-	if !a.dark {
-		t.Fatal("theme did not change")
+	if a.dark || a.themeID != "vael-light" {
+		t.Fatalf("theme did not change: %v %q", a.dark, a.themeID)
 	}
 	if err := tt.Click("编辑器"); err != nil {
 		t.Fatal(err)

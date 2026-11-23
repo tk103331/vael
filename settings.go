@@ -154,12 +154,43 @@ type settingsOption struct {
 // room its lines take.
 func (a *app) lookSettings(c *ui.Context, p palette) {
 	ui.Column(c).FillWidth().Gap(2).Children(func() {
-		a.settingsRow(c, p, "主题", "浅色或深色", func() {
-			if quiet(c, "浅色", !a.dark, p) {
-				a.dark = false
-			}
-			if quiet(c, "深色", a.dark, p) {
-				a.dark = true
+		// The themes, each as a swatch of its own colours.
+		ui.Row(c).FillWidth().Padding(6, 4).Gap(8).AlignItems(ui.Center).Children(func() {
+			ui.Column(c).Grow(1).MinWidth(0).Gap(2).Children(func() {
+				ui.Text(c, "主题").FontSize(12.5).TextColor(p.text)
+				ui.Text(c, "界面与编辑器的配色").FontSize(10.5).TextColor(p.muted)
+			})
+		})
+		ui.Box(c).FillWidth().Padding(0, 4).Children(func() {
+			ui.Row(c).FillWidth().Wrap().Gap(6).Children(func() {
+				for _, theme := range uiThemes {
+					theme := theme
+					a.themeSwatch(c, p, theme)
+				}
+			})
+		})
+		// The icon theme: the marks of the files of the tree and the tabs.
+		a.settingsRow(c, p, "图标主题", "文件树与标签页的标记", func() {
+			for _, icons := range iconThemes {
+				icons := icons
+				chosen := a.iconThemeFor() == icons.ID
+				b := ui.ButtonBase(c).Height(24).Padding(0, 9).Radius(5).AlignItems(ui.Center).
+					Label("图标主题：" + icons.Name)
+				if chosen {
+					b.Background(p.selected)
+				} else if b.Hovered() {
+					b.Background(p.edge)
+				}
+				b.Children(func() {
+					color := p.muted
+					if chosen {
+						color = p.text
+					}
+					ui.Text(c, icons.Name).FontSize(11.5).TextColor(color)
+				})
+				if b.Clicked() {
+					a.iconID = icons.ID
+				}
 			}
 		})
 		a.settingsRow(c, p, "字号", "编辑器的字号，9 到 24", func() {

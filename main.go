@@ -133,7 +133,7 @@ func (a *app) menus() {
 					f.state.Run(editorFind)
 				}
 			}),
-			item("切换明暗主题", "CmdOrCtrl+Shift+L", func() { a.dark = !a.dark }),
+			item("切换明暗主题", "CmdOrCtrl+Shift+L", a.toggleDark),
 			item("专注模式", "CmdOrCtrl+Shift+F12", func() { a.zen = !a.zen }),
 			item("自动换行", "Alt+Z", func() { a.wrap = !a.wrap }),
 			mygo.Separator(),
