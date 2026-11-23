@@ -27,32 +27,39 @@ func (a *app) settingsView(c *ui.Context, p palette) {
 	}
 	open := true
 	ui.Modal(c, &open, func() {
-		ui.Column(c).Width(540).Padding(20).Gap(14).Children(func() {
+		ui.Column(c).Width(760).Padding(20).Gap(12).Children(func() {
 			ui.Text(c, "设置").FontSize(17).FontWeight(650)
-			ui.Row(c).FillWidth().Gap(2).Children(func() {
-				a.settingsTab(c, p, "外观", settingsLook)
-				a.settingsTab(c, p, "编辑器", settingsEditor)
-				a.settingsTab(c, p, "环境", settingsEnv)
-				a.settingsTab(c, p, "语言服务器", settingsLSP)
-				a.settingsTab(c, p, "ACP Agent", settingsAgent)
-			})
-			ui.Divider(c)
-			ui.Scroll(c).FillWidth().MaxHeight(460).Children(func() {
-				ui.Column(c).FillWidth().Gap(2).Children(func() {
-					switch a.settingsSection {
-					case settingsEditor:
-						a.editorSettings(c, p)
-					case settingsEnv:
-						a.environmentsSettings(c, p)
-					case settingsLSP:
-						a.lspSettingsView(c, p)
-					case settingsAgent:
-						a.agentsSettings(c, p)
-					default:
-						a.lookSettings(c, p)
-					}
+			ui.Row(c).FillWidth().Grow(1).MinHeight(0).Gap(16).AlignItems(ui.Start).Children(func() {
+				// The sections down the left, as an IDE's preferences, and
+				// the one chosen beside them.
+				ui.Column(c).Width(168).Shrink(0).Gap(2).Children(func() {
+					a.settingsTab(c, p, "外观", settingsLook, sunIcon)
+					a.settingsTab(c, p, "编辑器", settingsEditor, codeIcon)
+					a.settingsTab(c, p, "环境", settingsEnv, globeIcon)
+					a.settingsTab(c, p, "语言服务器", settingsLSP, lspIcon)
+					a.settingsTab(c, p, "ACP Agent", settingsAgent, agentIcon)
+				})
+				ui.Divider(c)
+				ui.Column(c).Grow(1).MinWidth(0).Children(func() {
+					ui.Scroll(c).FillWidth().MaxHeight(520).Children(func() {
+						ui.Column(c).FillWidth().Gap(2).Children(func() {
+							switch a.settingsSection {
+							case settingsEditor:
+								a.editorSettings(c, p)
+							case settingsEnv:
+								a.environmentsSettings(c, p)
+							case settingsLSP:
+								a.lspSettingsView(c, p)
+							case settingsAgent:
+								a.agentsSettings(c, p)
+							default:
+								a.lookSettings(c, p)
+							}
+						})
+					})
 				})
 			})
+			ui.Divider(c)
 			ui.Row(c).FillWidth().Children(func() {
 				ui.Text(c, "设置随会话保留。").FontSize(10.5).TextColor(p.muted).Grow(1)
 				if ui.Button(c, "完成").Clicked() {
@@ -69,10 +76,12 @@ func (a *app) settingsView(c *ui.Context, p palette) {
 	}
 }
 
-// settingsTab is a section of the settings.
-func (a *app) settingsTab(c *ui.Context, p palette, label, section string) {
+// settingsTab is a section of the settings, down the left of it: an icon,
+// its name, and the way it looks when it is the one showing.
+func (a *app) settingsTab(c *ui.Context, p palette, label, section string, icon *ui.SVG) {
 	active := a.settingsSection == section
-	b := ui.ButtonBase(c).Height(26).Padding(0, 10).Radius(5).AlignItems(ui.Center).Label(label)
+	b := ui.ButtonBase(c).FillWidth().Height(28).Padding(0, 8).Radius(5).Gap(7).
+		AlignItems(ui.Center).Label(label)
 	if active {
 		b.Background(p.selected)
 	} else if b.Hovered() {
@@ -81,9 +90,15 @@ func (a *app) settingsTab(c *ui.Context, p palette, label, section string) {
 	b.Children(func() {
 		color := p.muted
 		if active {
-			color = p.text
+			color = p.accent
 		}
-		ui.Text(c, label).FontSize(12).FontWeight(600).TextColor(color)
+		ui.Icon(c, icon).Size(13, 13).TextColor(color)
+		nameColor := p.text
+		if !active {
+			nameColor = p.muted
+		}
+		ui.Text(c, label).FontSize(12).FontWeight(600).TextColor(nameColor).
+			SingleLine().Ellipsis("…")
 	})
 	if b.Clicked() {
 		a.settingsSection = section
