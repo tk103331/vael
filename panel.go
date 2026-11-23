@@ -86,6 +86,11 @@ var panels = []panel{
 		ID: "git", Name: "Git 日志", Tip: "面板：Git", Title: "Git", Icon: gitIcon, Position: panelBottom,
 		View: (*app).logView,
 	},
+	{
+		ID: "problems", Name: "问题", Tip: "面板：问题", Title: "问题", Icon: alertIcon,
+		Position: panelBottom, View: (*app).problemView,
+		Badge: func(a *app) string { return a.problemBadge() },
+	},
 	// The panels no bar shows: the command palette opens them.
 	{
 		ID: "search", Name: "项目搜索", Hidden: true, Position: panelLeft,

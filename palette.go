@@ -60,6 +60,7 @@ func (a *app) commands() []command {
 		{title: "终端：新建终端", hint: "在项目目录启动 shell", run: a.newTerminal},
 		{title: "Git：提交已暂存的更改", hint: "使用暂存区内容创建提交", run: func() { a.sidebar = true; a.section = "commit" }},
 		{title: "Git：查看日志", hint: "提交图、筛选与文件变更", run: a.showLog},
+		{title: "视图：问题", hint: "代码里的问题列表", run: func() { a.showBottom = true; a.bottomTab = "problems" }},
 		{title: "Git：切换分支…", hint: "搜索分支与 Git 操作", run: func() { a.branchMenuOpen = true; a.loadBranches() }},
 		{title: "Git：新建分支…", hint: "创建并切换到一个新分支", run: func() { a.branchPrompt = &branchPrompt{} }},
 		{title: "Git：检出标签或修订…", hint: "检出标签、提交或远程分支", run: func() { a.revisionPrompt = &revisionPrompt{} }},

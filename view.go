@@ -909,22 +909,10 @@ func (a *app) bottomStrip(c *ui.Context, p palette) {
 		for _, item := range panelsAt(panelBottom) {
 			item := item
 			active := a.bottomTab == item.ID
-			b := ui.ButtonBase(c).Size(30, 30).Radius(5).Center().Label(item.Tip)
-			if active {
-				b.Background(p.selected)
-			} else if b.Hovered() {
-				b.Background(p.edge)
-			}
-			color := p.muted
-			if active {
-				color = p.accent
-			}
-			b.Children(func() { ui.Icon(c, item.Icon).Size(17, 17).TextColor(color) })
-			b.Tooltip(item.Name)
-			if b.Clicked() {
+			a.panelButton(c, p, item, active, func() {
 				a.showBottom = true
 				a.bottomTab = item.ID
-			}
+			})
 		}
 	})
 }

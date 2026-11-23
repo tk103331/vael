@@ -313,7 +313,7 @@ func TestThePanelsAreValues(t *testing.T) {
 	}{
 		{"files", panelLeft}, {"commit", panelLeft},
 		{"outline", panelRight}, {"agent", panelRight},
-		{"terminal", panelBottom}, {"git", panelBottom},
+		{"terminal", panelBottom}, {"git", panelBottom}, {"problems", panelBottom},
 	}
 	for _, w := range want {
 		item := panelAt(w.id, w.position)
@@ -325,7 +325,7 @@ func TestThePanelsAreValues(t *testing.T) {
 		}
 	}
 	for position, want := range map[panelPosition]int{
-		panelLeft: 2, panelRight: 2, panelBottom: 2,
+		panelLeft: 2, panelRight: 2, panelBottom: 3,
 	} {
 		if got := len(panelsAt(position)); got != want {
 			t.Fatalf("the bar of %v shows %d panels, not %d", position, got, want)
