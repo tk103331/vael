@@ -1200,44 +1200,77 @@ func permissionCommand(raw json.RawMessage) string {
 }
 
 // agentComposer is the box that asks the agent something: its session's
-// selectors, the words, and the send that ends them.
+// selectors, the words, and the send that ends them. The send and the stop
+// are one button inside the box, whose mark says which it is.
 func (a *app) agentComposer(c *ui.Context, p palette) {
-	ui.Column(c).FillWidth().Padding(8).Gap(6).Children(func() {
+	ui.Column(c).FillWidth().Padding(8).Gap(4).Children(func() {
 		if len(a.agentConfig) > 0 || len(a.agentModes) > 0 {
 			a.agentConfigBar(c, p)
 		}
-		input := ui.TextArea(c, &a.agentInput).FillWidth().Lines(1, 6).MinHeight(30).
-			Padding(4, 6).Placeholder("询问 Agent…").Label("Agent 输入")
-		input.OnTextKey(func(k ui.TextKey) bool {
-			// Enter sends; Shift+Enter breaks the line.
-			if k.Key != ui.KeyEnter || k.Mods != 0 || a.agentBusy {
-				return false
-			}
-			text := k.Text()
-			a.sendAgentText(text)
-			if strings.TrimSpace(text) != "" && a.agentConn != nil {
-				k.SetText("")
-			}
-			return true
-		})
-		submitted := input.Submitted()
-		ui.Row(c).FillWidth().Gap(6).AlignItems(ui.Center).Children(func() {
-			hint := "Enter 发送 · Shift+Enter 换行"
-			if a.agentConn == nil {
-				hint = "先启动 Agent 才能发送"
-			} else if a.agentBusy {
-				hint = "等这一轮结束，或取消它"
-			}
-			ui.Text(c, hint).FontSize(9.5).TextColor(p.muted).Grow(1).SingleLine().Ellipsis("…")
-			if a.agentBusy {
-				if smallIconButton(c, stopIcon, "取消本轮", p) {
-					a.cancelAgentPrompt()
+		// The box sits in a box of its own, so that the button can float
+		// in its corner: two lines to write in, up to six as the words
+		// grow, with room on the right for the button.
+		ui.Box(c).FillWidth().Children(func() {
+			input := ui.TextArea(c, &a.agentInput).FillWidth().Lines(2, 6).MinHeight(46).
+				Padding(6, 40, 6, 8).Placeholder("询问 Agent…").Label("Agent 输入")
+			input.OnTextKey(func(k ui.TextKey) bool {
+				// Enter sends; Shift+Enter breaks the line.
+				if k.Key != ui.KeyEnter || k.Mods != 0 || a.agentBusy {
+					return false
 				}
-			}
-			disabled := a.agentConn == nil || a.agentBusy || strings.TrimSpace(a.agentInput) == ""
-			if ui.PrimaryButton(c, "发送").Disabled(disabled).Clicked() || submitted {
-				a.sendToAgent()
-			}
+				text := k.Text()
+				a.sendAgentText(text)
+				if strings.TrimSpace(text) != "" && a.agentConn != nil {
+					k.SetText("")
+				}
+				return true
+			})
+			a.agentSendButton(c, p)
 		})
+		hint := "Enter 发送 · Shift+Enter 换行"
+		if a.agentConn == nil {
+			hint = "先启动 Agent 才能发送"
+		} else if a.agentBusy {
+			hint = "正在工作… 点右下角停止"
+		}
+		ui.Text(c, hint).FontSize(9.5).TextColor(p.muted).SingleLine().Ellipsis("…")
 	})
+}
+
+// agentSendButton is the send of the composer, and the stop of the turn
+// that runs: one button, whose mark says which it is.
+func (a *app) agentSendButton(c *ui.Context, p palette) {
+	busy := a.agentBusy
+	ready := a.agentConn != nil && strings.TrimSpace(a.agentInput) != ""
+	enabled := busy || ready
+	icon, tip := arrowUpIcon, "发送"
+	if busy {
+		icon, tip = stopIcon, "停止"
+	}
+	b := ui.ButtonBase(c).Absolute().Right(6).Bottom(6).Size(26, 26).Radius(13).
+		Center().Label(tip)
+	theme := c.Theme()
+	switch {
+	case !enabled:
+		b.Background(p.edge)
+	case b.Hovered():
+		b.Background(theme.AccentHover)
+	default:
+		b.Background(theme.Accent)
+	}
+	b.Children(func() {
+		color := p.muted
+		if enabled {
+			color = theme.AccentText
+		}
+		ui.Icon(c, icon).Size(13, 13).TextColor(color)
+	})
+	b.Tooltip(tip)
+	if enabled && b.Clicked() {
+		if busy {
+			a.cancelAgentPrompt()
+			return
+		}
+		a.sendToAgent()
+	}
 }

@@ -30,8 +30,16 @@ func TestTheConversationKeepsTheComposerInView(t *testing.T) {
 		t.Fatalf("the send button is out of the panel: %v %+v", ok, send)
 	}
 	input, ok := tt.Find("Agent 输入")
-	if !ok || input.H == 0 || input.Y+input.H > send.Y {
-		t.Fatalf("the composer is out of the panel: %v %+v %+v", ok, input, send)
+	if !ok || input.H == 0 {
+		t.Fatalf("the composer is out of the panel: %v %+v", ok, input)
+	}
+	// Two lines to write in, with the button inside the box.
+	if input.H < 40 || input.H > 70 {
+		t.Fatalf("the box is %v high, not two lines", input.H)
+	}
+	if send.X < input.X || send.X+send.W > input.X+input.W ||
+		send.Y < input.Y || send.Y+send.H > input.Y+input.H {
+		t.Fatalf("the button is not inside the box: %+v, %+v", send, input)
 	}
 	if a.agentScroll.MaxY <= 0 {
 		t.Fatalf("the conversation does not scroll: %+v", a.agentScroll)
@@ -74,5 +82,35 @@ func TestTheConversationGoesBackToItsEnd(t *testing.T) {
 	}
 	if a.agentScroll.Y < a.agentScroll.MaxY/2 {
 		t.Fatalf("the conversation did not go back: %v of %v", a.agentScroll.Y, a.agentScroll.MaxY)
+	}
+}
+
+// TestTheComposerSwitchesItsButton checks the one button of the box: send
+// when nothing runs, stop when a turn does.
+func TestTheComposerSwitchesItsButton(t *testing.T) {
+	a := newApp()
+	defer a.shutdown()
+	a.root = t.TempDir()
+	a.rightPanel = true
+	a.rightSection = "agent"
+	a.agentStatus = "已连接"
+	a.agentInput = "问一句"
+	tt := ui.NewTester(a.view, 1280, 840)
+	tt.Frame()
+	if _, ok := tt.Find("发送"); !ok {
+		t.Fatalf("the send is not drawn: %v", tt.Texts())
+	}
+	a.agentBusy = true
+	tt.Frame()
+	if _, ok := tt.Find("停止"); !ok {
+		t.Fatalf("the stop is not drawn while a turn runs: %v", tt.Texts())
+	}
+	if _, ok := tt.Find("发送"); ok {
+		t.Fatalf("the send is drawn while a turn runs: %v", tt.Texts())
+	}
+	a.agentBusy = false
+	tt.Frame()
+	if _, ok := tt.Find("发送"); !ok {
+		t.Fatalf("the send came not back: %v", tt.Texts())
 	}
 }
