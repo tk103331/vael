@@ -38,6 +38,9 @@ type Session struct {
 	// FontFamily is the family of the editor's text; the system's
 	// monospaced one when empty.
 	FontFamily string
+	// Minimap is whether the editor shows the minimap beside it; nil for
+	// the default, which is to show it.
+	Minimap *bool
 	// AutoSave is when a file saves itself: never, as it is left, or a
 	// moment after its text stops changing.
 	AutoSave     int

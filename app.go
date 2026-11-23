@@ -34,6 +34,13 @@ type fileTab struct {
 	// autoSaveAt is the version of the text the automatic save is waiting
 	// on: a newer one waits for a save of its own.
 	autoSaveAt uint64
+	// The minimap's ink, read once for the version of the text and the
+	// rows it was read for, and the height it was last drawn at, so that a
+	// click can tell which line it was at.
+	miniVersion uint64
+	miniRows    int
+	miniInk     []miniLineInk
+	miniHeight  float32
 }
 type shellTab struct {
 	term *terminal.Terminal
@@ -201,6 +208,7 @@ type app struct {
 	fontMenuOpen                     bool
 	fontQuery                        string
 	fontFamilies                     []ui.FontFamily
+	minimap                          bool
 	autoSave                         int
 	trimOnSave, finalNewline         bool
 	formatOnSave                     bool
@@ -242,7 +250,7 @@ type app struct {
 
 func newApp() *app {
 	ctx, cancel := context.WithCancel(context.Background())
-	return &app{projectCtx: ctx, projectCancel: cancel, backend: core.NewLocal(), lsps: map[string]*lspSession{}, pendingCaret: map[string]editor.Pos{}, sideWidth: 248, rightShare: 72, logShare: 74, rightSection: "outline", bottomTab: "terminal", editorShare: 62, splitShare: 50, stamps: map[string]workspace.Stamp{}, stale: map[string]string{}, commandUses: map[string]int{}, entries: map[string][]workspace.Entry{}, expanded: map[string]bool{}, loading: map[string]bool{}, themeID: "vael-dark", iconID: "badges", fontFamily: "monospace", sidebar: true, section: "files", guides: true, autoClose: true, numbers: true, selected: -1, termSelected: -1, logLocalOpen: true, logRemoteOpen: true, logRemoteClosed: map[string]bool{}, logGraphOn: true, logDetailOn: true}
+	return &app{projectCtx: ctx, projectCancel: cancel, backend: core.NewLocal(), lsps: map[string]*lspSession{}, pendingCaret: map[string]editor.Pos{}, sideWidth: 248, rightShare: 72, logShare: 74, rightSection: "outline", bottomTab: "terminal", editorShare: 62, splitShare: 50, stamps: map[string]workspace.Stamp{}, stale: map[string]string{}, commandUses: map[string]int{}, entries: map[string][]workspace.Entry{}, expanded: map[string]bool{}, loading: map[string]bool{}, themeID: "vael-dark", iconID: "badges", fontFamily: "monospace", minimap: true, sidebar: true, section: "files", guides: true, autoClose: true, numbers: true, selected: -1, termSelected: -1, logLocalOpen: true, logRemoteOpen: true, logRemoteClosed: map[string]bool{}, logGraphOn: true, logDetailOn: true}
 }
 func (a *app) active() *fileTab {
 	if a.split && a.focusPane == 1 {

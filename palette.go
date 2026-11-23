@@ -59,6 +59,7 @@ func (a *app) commands() []command {
 		}},
 		{title: "视图：切换右侧面板", hint: "显示或隐藏大纲与 Agent", run: func() { a.rightPanel = !a.rightPanel }},
 		{title: "视图：拆分编辑器", hint: "CmdOrCtrl+\\，左右两栏各一个文件", run: a.splitEditor},
+		{title: "视图：缩略图", hint: "在编辑器右侧显示或隐藏整份文件的缩略图", run: func() { a.minimap = !a.minimap }},
 		{title: "视图：专注模式", hint: "隐藏工具窗，只留编辑器", run: func() { a.zen = !a.zen }},
 		{title: "视图：切换明暗主题", hint: "在同一套主题的浅色与深色之间切换", run: a.toggleDark},
 		{title: "视图：自动换行", hint: "长行是否折行显示", run: func() { a.wrap = !a.wrap }},

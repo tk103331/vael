@@ -841,10 +841,16 @@ func (a *app) editorPane(c *ui.Context, p palette, pane int) {
 		a.autoSaveOnChange(f)
 		a.styleEditor(f.state)
 		a.lspEditor(f)
-		view := editor.View(c, f.state).FillWidth().Grow(1)
-		if pane == a.focusPane {
-			view.AutoFocus()
-		}
+		ui.Row(c).FillWidth().Grow(1).MinHeight(0).Children(func() {
+			view := editor.View(c, f.state).FillHeight().Grow(1).MinWidth(0)
+			if pane == a.focusPane {
+				view.AutoFocus()
+			}
+			if a.minimap {
+				ui.Divider(c)
+				a.minimapView(c, p, f)
+			}
+		})
 	})
 }
 

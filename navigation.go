@@ -335,7 +335,7 @@ func (a *app) snapshot() workspace.Session {
 		NoGuides: !a.guides, NoAutoClose: !a.autoClose, NoNumbers: !a.numbers,
 		Theme: a.themeID, Icons: a.iconID, FontFamily: a.fontFamily,
 		AutoSave: a.autoSave, TrimOnSave: a.trimOnSave, FinalNewline: a.finalNewline,
-		FormatOnSave: a.formatOnSave}
+		FormatOnSave: a.formatOnSave, Minimap: &a.minimap}
 	s.Recent = append([]string(nil), a.recentFiles...)
 	if a.connection != nil {
 		s.ConnectionKind = a.connection.Kind
@@ -366,6 +366,9 @@ func (a *app) applyLayout(s workspace.Session) {
 	}
 	if s.FontFamily != "" {
 		a.fontFamily = s.FontFamily
+	}
+	if s.Minimap != nil {
+		a.minimap = *s.Minimap
 	}
 	if s.AutoSave >= autoSaveOff && s.AutoSave <= autoSaveAfterDelay {
 		a.autoSave = s.AutoSave
