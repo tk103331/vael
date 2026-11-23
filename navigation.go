@@ -201,8 +201,12 @@ func (a *app) quickOpenView(c *ui.Context, p palette) {
 	if !a.quickOpen {
 		return
 	}
-	name, line := quickTarget(a.quickQuery)
-	matches := workspace.MatchFiles(a.index.Files, name, 80)
+	parts := parseQuickQuery(a.quickQuery)
+	if parts.symbolOnly {
+		a.symbolQuickOpen(c, p, parts)
+		return
+	}
+	matches := workspace.MatchFiles(a.index.Files, parts.file, 80)
 	if a.quickQuery != a.quickShown {
 		// New results, new choice: the first match is what Enter opens.
 		a.quickShown = a.quickQuery
@@ -215,7 +219,7 @@ func (a *app) quickOpenView(c *ui.Context, p palette) {
 		ui.Column(c).Width(620).Padding(16).Gap(10).Children(func() {
 			ui.Text(c, "快速打开文件").FontSize(15).FontWeight(650)
 			input := ui.TextInput(c, &a.quickQuery).FillWidth().
-				Placeholder("文件名或路径，可加 :行号…").Label("快速打开文件名").AutoFocus()
+				Placeholder("文件名或路径，可加 :行号，或 @符号…").Label("快速打开文件名").AutoFocus()
 			if a.indexing {
 				ui.Text(c, "正在索引项目…").FontSize(11).TextColor(p.muted)
 			}
@@ -236,10 +240,10 @@ func (a *app) quickOpenView(c *ui.Context, p palette) {
 			})
 			if list.Submitted() && a.quickSelected >= 0 && a.quickSelected < len(matches) {
 				a.quickOpen = false
-				a.quickOpenFile(matches[a.quickSelected], line)
+				a.quickOpenFile(matches[a.quickSelected], parts.line, parts.symbol)
 			} else if input.Submitted() && len(matches) > 0 {
 				a.quickOpen = false
-				a.quickOpenFile(matches[max(0, a.quickSelected)], line)
+				a.quickOpenFile(matches[max(0, a.quickSelected)], parts.line, parts.symbol)
 			}
 			if len(matches) == 0 && !a.indexing {
 				ui.Text(c, "没有匹配的文件").FontSize(12).TextColor(p.muted)
@@ -483,11 +487,115 @@ func quickTarget(query string) (string, int) {
 	return strings.TrimSpace(query[:at]), line
 }
 
-// quickOpenFile opens what the quick open found, at the line it named.
-func (a *app) quickOpenFile(path string, line int) {
+// quickOpenFile opens what the quick open found, at the line it named, and
+// at the declaration it named, if any.
+func (a *app) quickOpenFile(path string, line int, symbol string) {
 	full := a.joinPath(a.root, path)
 	if line > 0 {
 		a.pendingCaret[full] = editor.Pos{Line: line - 1}
 	}
+	if symbol != "" {
+		a.pendingSymbol = full + "|" + symbol
+	}
 	a.openFile(full)
+}
+
+// quickQueryParts is what the quick open reads of what is typed: the file
+// to find, the line and the declaration to go to in it, as Sublime Text's
+// Goto Anything takes "file:42" and "file@name".
+type quickQueryParts struct {
+	file       string
+	line       int
+	symbol     string
+	symbolOnly bool
+}
+
+// parseQuickQuery reads what the quick open is given.
+func parseQuickQuery(query string) quickQueryParts {
+	parts := quickQueryParts{file: query}
+	if at := strings.Index(query, "@"); at >= 0 {
+		parts.symbol = strings.TrimSpace(query[at+1:])
+		parts.file = strings.TrimSpace(query[:at])
+		parts.symbolOnly = parts.file == ""
+	}
+	if !parts.symbolOnly {
+		parts.file, parts.line = quickTarget(parts.file)
+	}
+	return parts
+}
+
+// symbolQuickOpen lists the declarations of the file that is open, for
+// typing "@name" in the quick open.
+func (a *app) symbolQuickOpen(c *ui.Context, p palette, parts quickQueryParts) {
+	var symbols []workspace.Symbol
+	f := a.active()
+	if f != nil && f.state != nil {
+		symbols = workspace.SymbolsInFile(f.path, f.state.Buffer.String())
+	}
+	matches := workspace.MatchSymbols(symbols, parts.symbol, 80)
+	if a.quickQuery != a.quickShown {
+		a.quickShown = a.quickQuery
+		a.quickSelected = 0
+	}
+	if a.quickSelected >= len(matches) {
+		a.quickSelected = max(0, len(matches)-1)
+	}
+	ui.Modal(c, &a.quickOpen, func() {
+		ui.Column(c).Width(560).Padding(16).Gap(10).Children(func() {
+			ui.Text(c, "转到符号").FontSize(15).FontWeight(650)
+			input := ui.TextInput(c, &a.quickQuery).FillWidth().
+				Placeholder("输入符号名…（@ 后）").Label("转到文件中的符号").AutoFocus()
+			ui.Row(c).FillWidth().AlignItems(ui.Center).Children(func() {
+				name := "没有打开的文件"
+				if f != nil {
+					name = filepath.Base(f.path)
+				}
+				ui.Text(c, "文件："+name).FontSize(11).TextColor(p.muted).Grow(1).SingleLine().Ellipsis("…")
+			})
+			state := ui.ListState{
+				Selected: &a.quickSelected,
+				Key:      func(i int) any { return matches[i].Path + "|" + matches[i].Name },
+				Label:    func(i int) string { return matches[i].Name },
+			}
+			list := ui.List(c, &state, len(matches), func(i int) {
+				symbol := matches[i]
+				b := ui.ButtonBase(c).FillWidth().Height(30).Padding(0, 8).Gap(6).Radius(5).Label(symbol.Name)
+				if b.Hovered() {
+					b.Background(p.edge)
+				}
+				kindColor, lineColor := p.accent, p.muted
+				if i == a.quickSelected {
+					kindColor, lineColor = p.text, p.text
+				}
+				b.Children(func() {
+					ui.Text(c, symbol.Kind).FontSize(9.5).TextColor(kindColor).Width(38)
+					ui.Text(c, symbol.Name).FontSize(12).TextColor(p.text).Grow(1).SingleLine()
+					ui.Text(c, "第 "+itoa(symbol.Line)+" 行").FontSize(10).TextColor(lineColor)
+				})
+				if b.Clicked() {
+					a.quickOpen = false
+					a.symbolJump(f, symbol)
+				}
+			})
+			if list.Submitted() && a.quickSelected >= 0 && a.quickSelected < len(matches) {
+				a.quickOpen = false
+				a.symbolJump(f, matches[a.quickSelected])
+			} else if input.Submitted() && len(matches) > 0 {
+				a.quickOpen = false
+				a.symbolJump(f, matches[max(0, a.quickSelected)])
+			}
+			if len(matches) == 0 {
+				ui.Text(c, "没有匹配的符号。").FontSize(12).TextColor(p.muted)
+			}
+			ui.Text(c, "↑↓ 选择 · Enter 跳转 · Esc 关闭").FontSize(10).TextColor(p.muted)
+		})
+	})
+}
+
+// symbolJump puts the caret on a declaration of the file that is open.
+func (a *app) symbolJump(tab *fileTab, symbol workspace.Symbol) {
+	if tab == nil || tab.state == nil {
+		return
+	}
+	tab.state.GoTo(editor.Pos{Line: symbol.Line - 1, Col: symbol.Column - 1})
 }

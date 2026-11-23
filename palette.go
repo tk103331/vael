@@ -30,7 +30,9 @@ func (a *app) commands() []command {
 		{title: "文件：克隆仓库…", hint: "从 Git 地址克隆并打开", run: a.openClonePrompt},
 		{title: "文件：新建文件…", hint: "在项目根目录创建", run: func() { a.prompt = &namePrompt{} }},
 		{title: "文件：保存", hint: "保存当前文件", run: a.save},
-		{title: "文件：关闭标签页", hint: "关闭当前文件", run: func() { a.closeTab(a.selected) }},
+		{title: "文件：关闭标签页", hint: "关闭当前文件", run: func() { a.closeTab(a.activeIndex()) }},
+		{title: "代码：转到文件中的符号…", hint: "CmdOrCtrl+R，或快速打开里打 @", run: func() { a.quickQuery = "@"; a.quickOpen = true }},
+		{title: "代码：转到工作区符号…", hint: "CmdOrCtrl+Shift+R", run: a.workspaceSymbolsCommand},
 		{title: "代码：快速修复…", hint: "CmdOrCtrl+.", run: a.quickFixes},
 		{title: "代码：查找引用…", hint: "Shift+F12", run: a.findReferences},
 		{title: "代码：重命名符号…", hint: "F2，经语言服务器", run: a.renameSymbol},
@@ -56,6 +58,7 @@ func (a *app) commands() []command {
 			}
 		}},
 		{title: "视图：切换右侧面板", hint: "显示或隐藏大纲与 Agent", run: func() { a.rightPanel = !a.rightPanel }},
+		{title: "视图：拆分编辑器", hint: "CmdOrCtrl+\\，左右两栏各一个文件", run: a.splitEditor},
 		{title: "视图：专注模式", hint: "隐藏工具窗，只留编辑器", run: func() { a.zen = !a.zen }},
 		{title: "视图：切换明暗主题", hint: "在同一套主题的浅色与深色之间切换", run: a.toggleDark},
 		{title: "视图：自动换行", hint: "长行是否折行显示", run: func() { a.wrap = !a.wrap }},

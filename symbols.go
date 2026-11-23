@@ -7,6 +7,7 @@ import (
 	"unicode"
 
 	"github.com/egoist/mygo/ui"
+	"github.com/egoist/mygo/ui/editor"
 	"vael/internal/workspace"
 )
 
@@ -182,7 +183,7 @@ func (a *app) symbolSearchView(c *ui.Context, p palette) {
 					ui.Text(c, symbol.Path+":"+fmt.Sprintf("%d", symbol.Line)).FontSize(10).TextColor(p.muted).SingleLine().Ellipsis("…")
 				})
 				if row.Clicked() {
-					a.openFileAt(a.joinPath(a.root, symbol.Path), symbol.Offset, symbol.Offset)
+					a.openSymbol(symbol)
 				}
 			}
 		})
@@ -199,4 +200,99 @@ func (a *app) symbolsCommand() {
 	if len(a.symbols) == 0 {
 		a.loadSymbols()
 	}
+}
+
+// workspaceSymbolsCommand opens the project's declarations in a window of
+// their own, as Zed's and VS Code's Go to Symbol in Workspace does.
+func (a *app) workspaceSymbolsCommand() {
+	a.workspaceSymbolsOpen = true
+	a.workspaceSymbolQuery = ""
+	a.workspaceSymbolSelected = 0
+	if len(a.symbols) == 0 && !a.symbolsLoading {
+		a.loadSymbols()
+	}
+}
+
+// workspaceSymbolPicker is the window of the project's declarations: type
+// to filter them, Enter to go to the one chosen.
+func (a *app) workspaceSymbolPicker(c *ui.Context, p palette) {
+	if !a.workspaceSymbolsOpen {
+		return
+	}
+	matches := workspace.MatchSymbols(a.symbols, a.workspaceSymbolQuery, 200)
+	if a.workspaceSymbolQuery != a.workspaceSymbolShown {
+		a.workspaceSymbolShown = a.workspaceSymbolQuery
+		a.workspaceSymbolSelected = 0
+	}
+	if a.workspaceSymbolSelected >= len(matches) {
+		a.workspaceSymbolSelected = max(0, len(matches)-1)
+	}
+	open := func(index int) {
+		if index < 0 || index >= len(matches) {
+			return
+		}
+		a.workspaceSymbolsOpen = false
+		a.openSymbol(matches[index])
+	}
+	ui.Modal(c, &a.workspaceSymbolsOpen, func() {
+		ui.Column(c).Width(680).Padding(16).Gap(10).Children(func() {
+			ui.Text(c, "工作区符号").FontSize(15).FontWeight(650)
+			input := ui.TextInput(c, &a.workspaceSymbolQuery).FillWidth().
+				Placeholder("搜索函数、类型或类…").Label("工作区符号搜索").AutoFocus()
+			ui.Row(c).FillWidth().AlignItems(ui.Center).Children(func() {
+				if a.symbolsLoading {
+					ui.Text(c, "正在读取符号…").FontSize(11).TextColor(p.muted).Grow(1)
+				} else {
+					ui.Textf(c, "%d 个符号", len(a.symbols)).FontSize(11).TextColor(p.muted).Grow(1)
+				}
+				if quiet(c, "刷新", false, p) {
+					a.loadSymbols()
+				}
+			})
+			state := ui.ListState{
+				Selected: &a.workspaceSymbolSelected,
+				Key:      func(i int) any { return matches[i].Path + "|" + matches[i].Name + "|" + fmt.Sprint(matches[i].Line) },
+				Label:    func(i int) string { return matches[i].Name },
+			}
+			list := ui.List(c, &state, len(matches), func(i int) {
+				symbol := matches[i]
+				b := ui.ButtonBase(c).FillWidth().Height(30).Padding(0, 8).Gap(6).Radius(5).Label(symbol.Name)
+				if b.Hovered() {
+					b.Background(p.edge)
+				}
+				// The kind and the place are faint beside the name, but on
+				// the chosen row's color they must still read.
+				kindColor, pathColor := p.accent, p.muted
+				if i == a.workspaceSymbolSelected {
+					kindColor, pathColor = p.text, p.text
+				}
+				b.Children(func() {
+					ui.Text(c, symbol.Kind).FontSize(9.5).TextColor(kindColor).Width(38)
+					ui.Text(c, symbol.Name).FontSize(12).TextColor(p.text).Grow(1).SingleLine().Ellipsis("…")
+					ui.Text(c, symbol.Path+":"+fmt.Sprint(symbol.Line)).FontSize(10).TextColor(pathColor).SingleLine().Ellipsis("…")
+				})
+				if b.Clicked() {
+					open(i)
+				}
+			})
+			if list.Submitted() {
+				open(a.workspaceSymbolSelected)
+			} else if input.Submitted() {
+				open(a.workspaceSymbolSelected)
+			}
+			if len(matches) == 0 && !a.symbolsLoading {
+				ui.Text(c, "没有匹配的符号。").FontSize(12).TextColor(p.muted)
+			}
+			ui.Text(c, "↑↓ 选择 · Enter 跳转 · Esc 关闭").FontSize(10).TextColor(p.muted)
+		})
+	})
+}
+
+// openSymbol opens the file of a declaration and puts the caret on it.
+func (a *app) openSymbol(symbol workspace.Symbol) {
+	full := a.joinPath(a.root, symbol.Path)
+	if symbol.Line > 0 {
+		a.pendingCaret[full] = editor.Pos{Line: symbol.Line - 1, Col: symbol.Column - 1}
+	}
+	a.openFile(full)
 }

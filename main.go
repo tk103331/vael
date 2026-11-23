@@ -96,8 +96,8 @@ func (a *app) menus() {
 			item("保存", "CmdOrCtrl+S", a.save),
 			item("下一个标签页", "CmdOrCtrl+Shift+]", a.nextTab),
 			item("上一个标签页", "CmdOrCtrl+Shift+[", a.prevTab),
-			item("关闭标签页", "CmdOrCtrl+W", func() { a.closeTab(a.selected) }),
-			item("关闭其他标签页", "", func() { a.closeOtherTabs(a.selected) }),
+			item("关闭标签页", "CmdOrCtrl+W", func() { a.closeTab(a.activeIndex()) }),
+			item("关闭其他标签页", "", func() { a.closeOtherTabs(a.activeIndex()) }),
 			item("关闭全部标签页", "", a.closeAllTabs),
 		}},
 		{Role: mygo.RoleEditMenu},
@@ -126,6 +126,9 @@ func (a *app) menus() {
 					a.showTerminal()
 				}
 			}),
+			item("转到文件中的符号…", "CmdOrCtrl+R", func() { a.quickQuery = "@"; a.quickOpen = true }),
+			item("转到工作区符号…", "CmdOrCtrl+Shift+R", a.workspaceSymbolsCommand),
+			item("拆分编辑器", "CmdOrCtrl+\\", a.splitEditor),
 			item("转到行…", "CmdOrCtrl+G", func() {
 				if f := a.active(); f != nil && f.state != nil {
 					f.state.Run(editor.GoToLine)

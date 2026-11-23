@@ -245,7 +245,7 @@ func (a *app) actionView(c *ui.Context, p palette) {
 				// still read on the chosen row's color.
 				kindColor := p.muted
 				if chosen {
-					kindColor = p.wash
+					kindColor = p.text
 				}
 				b.Children(func() {
 					ui.Text(c, item.title).FontSize(12).TextColor(p.text).Grow(1).

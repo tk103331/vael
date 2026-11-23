@@ -213,6 +213,15 @@ type app struct {
 	lspPath                          string
 	lsps                             map[string]*lspSession
 	pendingCaret                     map[string]editor.Pos
+	pendingSymbol                    string
+	split                            bool
+	splitPath                        string
+	splitShare                       float32
+	focusPane                        int
+	workspaceSymbolsOpen             bool
+	workspaceSymbolQuery             string
+	workspaceSymbolSelected          int
+	workspaceSymbolShown             string
 	lspOn                            map[string]bool
 	lspMenuOpen                      bool
 	lspCmd                           map[string]*string
@@ -233,13 +242,15 @@ type app struct {
 
 func newApp() *app {
 	ctx, cancel := context.WithCancel(context.Background())
-	return &app{projectCtx: ctx, projectCancel: cancel, backend: core.NewLocal(), lsps: map[string]*lspSession{}, pendingCaret: map[string]editor.Pos{}, sideWidth: 248, rightShare: 72, logShare: 74, rightSection: "outline", bottomTab: "terminal", editorShare: 62, stamps: map[string]workspace.Stamp{}, stale: map[string]string{}, commandUses: map[string]int{}, entries: map[string][]workspace.Entry{}, expanded: map[string]bool{}, loading: map[string]bool{}, themeID: "vael-dark", iconID: "badges", fontFamily: "monospace", sidebar: true, section: "files", guides: true, autoClose: true, numbers: true, selected: -1, termSelected: -1, logLocalOpen: true, logRemoteOpen: true, logRemoteClosed: map[string]bool{}, logGraphOn: true, logDetailOn: true}
+	return &app{projectCtx: ctx, projectCancel: cancel, backend: core.NewLocal(), lsps: map[string]*lspSession{}, pendingCaret: map[string]editor.Pos{}, sideWidth: 248, rightShare: 72, logShare: 74, rightSection: "outline", bottomTab: "terminal", editorShare: 62, splitShare: 50, stamps: map[string]workspace.Stamp{}, stale: map[string]string{}, commandUses: map[string]int{}, entries: map[string][]workspace.Entry{}, expanded: map[string]bool{}, loading: map[string]bool{}, themeID: "vael-dark", iconID: "badges", fontFamily: "monospace", sidebar: true, section: "files", guides: true, autoClose: true, numbers: true, selected: -1, termSelected: -1, logLocalOpen: true, logRemoteOpen: true, logRemoteClosed: map[string]bool{}, logGraphOn: true, logDetailOn: true}
 }
 func (a *app) active() *fileTab {
-	if a.selected < 0 || a.selected >= len(a.tabs) {
-		return nil
+	if a.split && a.focusPane == 1 {
+		if tab := a.paneTab(1); tab != nil {
+			return tab
+		}
 	}
-	return a.tabs[a.selected]
+	return a.selectedTab()
 }
 func (a *app) dirty() bool {
 	for _, f := range a.tabs {
@@ -415,12 +426,13 @@ func (a *app) openFile(path string) {
 func (a *app) openFileAt(path string, start, end int) {
 	for i, f := range a.tabs {
 		if f.path == path && f.diff == nil {
-			a.selected = i
+			a.focusTab(i)
 			a.noteRecent(path)
 			if start >= 0 {
 				f.state.Select(start, end)
 			}
 			a.takeCaret(path, f)
+			a.takeSymbol(path, f)
 			return
 		}
 	}
@@ -442,7 +454,7 @@ func (a *app) openFileAt(path string, start, end int) {
 			}
 			for i, f := range a.tabs {
 				if f.path == path && f.diff == nil {
-					a.selected = i
+					a.focusTab(i)
 					a.noteRecent(path)
 					a.stamps[path] = stamp
 					a.updateWatchTargets()
@@ -472,17 +484,18 @@ func (a *app) openFileAt(path string, start, end int) {
 				}
 			}
 			a.tabs = append(a.tabs, tab)
-			a.selected = len(a.tabs) - 1
+			a.focusTab(len(a.tabs) - 1)
 			a.noteRecent(path)
 			a.stamps[path] = stamp
 			a.watchVersion++
 			a.updateWatchTargets()
-			a.refreshDiffBase(a.tabs[a.selected])
-			a.lspDidOpen(a.tabs[a.selected])
+			a.refreshDiffBase(tab)
+			a.lspDidOpen(tab)
 			if start >= 0 {
-				a.tabs[a.selected].state.Select(start, end)
+				tab.state.Select(start, end)
 			}
-			a.takeCaret(path, a.tabs[a.selected])
+			a.takeCaret(path, tab)
+			a.takeSymbol(path, tab)
 		})
 	}()
 }
@@ -506,6 +519,11 @@ func (a *app) closeTab(index int) {
 				}
 				if a.selected >= len(a.tabs) {
 					a.selected = len(a.tabs) - 1
+				}
+				if a.split && a.splitPath == f.path && a.splitIndex() < 0 {
+					// The right pane's file is gone: it shows what the left
+					// and it have left, else nothing.
+					a.splitPath = ""
 				}
 				delete(a.stamps, f.path)
 				a.lspDidClose(f)

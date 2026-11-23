@@ -65,14 +65,22 @@ func (a *app) nextTab() {
 	if len(a.tabs) == 0 {
 		return
 	}
-	a.selected = (a.selected + 1) % len(a.tabs)
+	index := a.paneIndex(a.focusPane)
+	if index < 0 {
+		index = a.selected
+	}
+	a.focusTab((index + 1) % len(a.tabs))
 }
 
 func (a *app) prevTab() {
 	if len(a.tabs) == 0 {
 		return
 	}
-	a.selected = (a.selected - 1 + len(a.tabs)) % len(a.tabs)
+	index := a.paneIndex(a.focusPane)
+	if index < 0 {
+		index = a.selected
+	}
+	a.focusTab((index - 1 + len(a.tabs)) % len(a.tabs))
 }
 
 // closeOtherTabs closes every tab but one, asking first when the others
@@ -91,6 +99,9 @@ func (a *app) closeOtherTabs(keep int) {
 		kept := a.tabs[keep]
 		a.tabs = []*fileTab{kept}
 		a.selected = 0
+		if a.split {
+			a.splitPath = kept.path
+		}
 		a.updateWatchTargets()
 	}
 	if dirty {
@@ -180,7 +191,11 @@ func glyphFor(name string) glyph {
 // open is, as an IDE's: each part of the path is a button that shows the
 // file in the tree.
 func (a *app) breadcrumb(c *ui.Context, p palette) {
-	f := a.active()
+	a.breadcrumbOf(c, p, a.active())
+}
+
+// breadcrumbOf is the place of a file in the project, as a row of segments.
+func (a *app) breadcrumbOf(c *ui.Context, p palette, f *fileTab) {
 	if f == nil {
 		return
 	}

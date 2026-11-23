@@ -352,8 +352,8 @@ func (a *app) windowControls(c *ui.Context, p palette) {
 // editorTab is one tab of the editor: the file it shows, and the button
 // that closes it. The tab of the file that is open is filled, the others
 // are plain until the pointer is over them.
-func (a *app) editorTab(c *ui.Context, p palette, i int, tab *fileTab) {
-	active := i == a.selected
+func (a *app) editorTab(c *ui.Context, p palette, pane, i int, tab *fileTab) {
+	active := i == a.paneIndex(pane)
 	name := filepath.Base(tab.path)
 	b := ui.ButtonBase(c).Height(28).Padding(0, 6).Radius(6).Gap(5).Label(name)
 	if active {
@@ -389,7 +389,8 @@ func (a *app) editorTab(c *ui.Context, p palette, i int, tab *fileTab) {
 	// The tooltip says where the file is.
 	b.Tooltip(tab.path)
 	if b.Clicked() {
-		a.selected = i
+		a.focusPaneOn(pane)
+		a.focusTab(i)
 	}
 	tabMenu(c, a, tab, i, b)
 }
@@ -625,6 +626,7 @@ func (a *app) view(c *ui.Context) {
 			})
 		}
 	})
+	a.workspaceSymbolPicker(c, p)
 	a.actionView(c, p)
 	a.referenceView(c, p)
 	a.symbolPromptView(c, p)
@@ -794,14 +796,68 @@ func (a *app) tree(c *ui.Context, p palette, dir string, depth int, width float3
 	}
 }
 func (a *app) editorView(c *ui.Context, p palette) {
+	a.updateFocusPane()
+	if !a.split || a.zen {
+		a.editorPane(c, p, 0)
+		return
+	}
+	ui.SplitPercent(c, &a.splitShare,
+		func() { a.editorPane(c, p, 0) },
+		func() { a.editorPane(c, p, 1) }).Fill()
+}
+
+// editorPane is one of the editor's panes: its strip of tabs, the place of
+// the file, and the file.
+func (a *app) editorPane(c *ui.Context, p palette, pane int) {
+	ui.Column(c).Fill().MinWidth(0).Children(func() {
+		a.editorTabStrip(c, p, pane)
+		if !a.zen {
+			a.breadcrumbOf(c, p, a.paneTab(pane))
+		}
+		f := a.paneTab(pane)
+		if f == nil {
+			if pane == 1 {
+				a.emptyPaneView(c, p)
+			} else {
+				a.welcomeView(c, p)
+			}
+			return
+		}
+		if note, ok := a.stale[f.path]; ok {
+			ui.Row(c).FillWidth().Padding(7, 10).Gap(8).Background(p.warnSoft).AlignItems(ui.Center).Children(func() {
+				ui.Text(c, note).FontSize(11.5).TextColor(p.text).Grow(1).SingleLine().Ellipsis("…")
+				if quiet(c, "重新加载", false, p) {
+					a.reloadFile(f)
+				}
+				if quiet(c, "保留我的修改", false, p) {
+					delete(a.stale, f.path)
+				}
+			})
+		}
+		if f.diff != nil {
+			editor.DiffView(c, f.diff).FillWidth().Grow(1)
+			return
+		}
+		a.autoSaveOnChange(f)
+		a.styleEditor(f.state)
+		a.lspEditor(f)
+		view := editor.View(c, f.state).FillWidth().Grow(1)
+		if pane == a.focusPane {
+			view.AutoFocus()
+		}
+	})
+}
+
+// editorTabStrip is a pane's bar of tabs, with the actions of the file the
+// pane shows.
+func (a *app) editorTabStrip(c *ui.Context, p palette, pane int) {
 	tabCount := len(a.tabs)
-	// The bar of the tabs, with the actions of the file that is open.
 	ui.Row(c).FillWidth().Height(36).Shrink(0).AlignItems(ui.Center).
 		BorderWidth(0, 0, 1, 0).BorderColor(p.edge).Children(func() {
 		ui.ScrollHorizontal(c).FillHeight().Grow(1).Shrink(1).Children(func() {
 			ui.Row(c).Height(36).Padding(2, 4).Gap(2).AlignItems(ui.Center).Children(func() {
 				for i, f := range a.tabs {
-					a.editorTab(c, p, i, f)
+					a.editorTab(c, p, pane, i, f)
 				}
 				if tabCount > 1 {
 					overflow := ui.ButtonBase(c).Size(24, 24).Radius(6).Center().Label("全部标签页")
@@ -811,7 +867,8 @@ func (a *app) editorView(c *ui.Context, p palette) {
 						for i, tab := range a.tabs {
 							name := filepath.Base(tab.path)
 							if m.Item(name).Chosen() {
-								a.selected = i
+								a.focusPaneOn(pane)
+								a.focusTab(i)
 							}
 						}
 					})
@@ -819,7 +876,7 @@ func (a *app) editorView(c *ui.Context, p palette) {
 			})
 		})
 		ui.Row(c).Padding(0, 6).Gap(2).AlignItems(ui.Center).Children(func() {
-			if f := a.active(); f != nil && f.state != nil {
+			if f := a.paneTab(pane); f != nil && f.state != nil {
 				if iconButton(c, searchIcon, "查找与替换", false, p) {
 					f.state.Run(editorFind)
 				}
@@ -830,62 +887,47 @@ func (a *app) editorView(c *ui.Context, p palette) {
 					a.save()
 				}
 			}
+			if pane == 1 {
+				if iconButton(c, xIcon, "取消拆分", false, p) {
+					a.splitEditor()
+				}
+			} else if iconButton(c, splitIcon, "拆分编辑器", a.split, p) {
+				a.splitEditor()
+			}
 		})
 	})
-	if !a.zen {
-		a.breadcrumb(c, p)
-	}
-	f := a.active()
-	if f == nil {
-		ui.Column(c).FillWidth().Grow(1).Center().Gap(14).Children(func() {
-			ui.Text(c, "Vael").FontSize(38).FontWeight(700).TextColor(p.text)
-			ui.Text(c, "从一个文件，开始下一次创造。").FontSize(14).TextColor(p.muted)
-			ui.Row(c).Gap(8).Children(func() {
-				if ui.PrimaryButton(c, "打开项目").Clicked() {
-					a.chooseProject()
-				}
-				if ui.Button(c, "新建文件").Clicked() {
-					a.prompt = &namePrompt{}
-				}
-				if ui.Button(c, "启动终端").Clicked() {
-					a.newTerminal()
+}
+
+// welcomeView is what the editor shows without a file.
+func (a *app) welcomeView(c *ui.Context, p palette) {
+	ui.Column(c).FillWidth().Grow(1).Center().Gap(14).Children(func() {
+		ui.Text(c, "Vael").FontSize(38).FontWeight(700).TextColor(p.text)
+		ui.Text(c, "从一个文件，开始下一次创造。").FontSize(14).TextColor(p.muted)
+		ui.Row(c).Gap(8).Children(func() {
+			if ui.PrimaryButton(c, "打开项目").Clicked() {
+				a.chooseProject()
+			}
+			if ui.Button(c, "新建文件").Clicked() {
+				a.prompt = &namePrompt{}
+			}
+			if ui.Button(c, "启动终端").Clicked() {
+				a.newTerminal()
+			}
+		})
+		ui.Text(c, "原生编辑器  /  文件树  /  Git  /  终端").FontSize(11).TextColor(p.muted)
+		if len(a.environments.Recent) > 0 {
+			ui.Text(c, "最近项目").FontSize(12).FontWeight(650).TextColor(p.muted).Padding(12, 0, 0, 0)
+			ui.Column(c).Width(480).Gap(2).Children(func() {
+				for i, recent := range a.environments.Recent {
+					if i >= 6 {
+						break
+					}
+					recent := recent
+					a.environmentRow(c, p, recent)
 				}
 			})
-			ui.Text(c, "原生编辑器  /  文件树  /  Git  /  终端").FontSize(11).TextColor(p.muted)
-			if len(a.environments.Recent) > 0 {
-				ui.Text(c, "最近项目").FontSize(12).FontWeight(650).TextColor(p.muted).Padding(12, 0, 0, 0)
-				ui.Column(c).Width(480).Gap(2).Children(func() {
-					for i, recent := range a.environments.Recent {
-						if i >= 6 {
-							break
-						}
-						recent := recent
-						a.environmentRow(c, p, recent)
-					}
-				})
-			}
-		})
-		return
-	}
-	if note, ok := a.stale[f.path]; ok {
-		ui.Row(c).FillWidth().Padding(7, 10).Gap(8).Background(p.warnSoft).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, note).FontSize(11.5).TextColor(p.text).Grow(1).SingleLine().Ellipsis("…")
-			if quiet(c, "重新加载", false, p) {
-				a.reloadFile(f)
-			}
-			if quiet(c, "保留我的修改", false, p) {
-				delete(a.stale, f.path)
-			}
-		})
-	}
-	if f.diff != nil {
-		editor.DiffView(c, f.diff).FillWidth().Grow(1)
-		return
-	}
-	a.autoSaveOnChange(f)
-	a.styleEditor(f.state)
-	a.lspEditor(f)
-	editor.View(c, f.state).FillWidth().Grow(1).AutoFocus()
+		}
+	})
 }
 
 // styleEditor puts the settings of the editor on a file's state, so that
