@@ -579,8 +579,17 @@ func (a *app) agentView(c *ui.Context, p palette) {
 						a.agentEmptyView(c, p)
 						return
 					}
+					// One Agent mark at the top of what it says, not one on
+					// every thought, tool and answer of the same turn.
+					wasAgent := false
 					for i := range a.agentLines {
-						a.agentLineView(c, p, &a.agentLines[i], i)
+						line := &a.agentLines[i]
+						isAgent := line.Kind == "thought" || line.Kind == "tool" || line.Kind == "agent"
+						if isAgent && !wasAgent {
+							a.agentSender(c, p)
+						}
+						a.agentLineView(c, p, line, i)
+						wasAgent = isAgent
 					}
 					if a.agentBusy {
 						a.agentBusyView(c, p)
@@ -782,35 +791,22 @@ func (a *app) agentLineView(c *ui.Context, p palette, line *agentLine, index int
 		}
 		ui.Text(c, line.Text).FontSize(10.5).TextColor(color)
 	case "tool":
-		ui.Column(c).FillWidth().Gap(3).Children(func() {
-			a.agentSender(c, p, "工具")
-			a.agentToolView(c, p, line)
-		})
+		a.agentToolView(c, p, line)
 	case "thought":
-		ui.Column(c).FillWidth().Gap(3).Children(func() {
-			a.agentSender(c, p, "思考")
-			a.agentThoughtView(c, p, line, index)
-		})
+		a.agentThoughtView(c, p, line, index)
 	case "you":
 		a.agentMessageView(c, p, line.Text, true)
 	default:
-		ui.Column(c).FillWidth().Gap(3).Children(func() {
-			a.agentSender(c, p, "")
-			a.agentMessageView(c, p, line.Text, false)
-		})
+		a.agentMessageView(c, p, line.Text, false)
 	}
 }
 
-// agentSender marks what follows as the agent's: its thought, a tool it
-// ran, or the words it answered with. The user's words are on the right
-// instead, as the other side of the conversation.
-func (a *app) agentSender(c *ui.Context, p palette, kind string) {
+// agentSender is the mark at the top of what the agent says, before its
+// thought, tools and words. The user's words are on the other side.
+func (a *app) agentSender(c *ui.Context, p palette) {
 	ui.Row(c).FillWidth().Gap(5).AlignItems(ui.Center).Children(func() {
 		ui.Icon(c, agentIcon).Size(12, 12).TextColor(p.muted)
 		ui.Text(c, "Agent").FontSize(10).FontWeight(650).TextColor(p.muted)
-		if kind != "" {
-			ui.Text(c, "· "+kind).FontSize(9.5).TextColor(p.muted)
-		}
 	})
 }
 

@@ -358,9 +358,8 @@ func TestAnUnknownConfigTypeIsLeftAlone(t *testing.T) {
 	}
 }
 
-// TestTheAgentContentIsAllHis checks that a thought, a tool and an answer
-// are each marked as coming from the agent, while the user's words are on
-// the other side.
+// TestTheAgentContentIsAllHis checks that one Agent mark heads the
+// thought, tools and answer of a turn, instead of naming each of them.
 func TestTheAgentContentIsAllHis(t *testing.T) {
 	a := newApp()
 	defer a.shutdown()
@@ -372,24 +371,25 @@ func TestTheAgentContentIsAllHis(t *testing.T) {
 		{Kind: "thought", Text: "写点什么。", Collapsed: true},
 		{Kind: "tool", Text: "读取 main.go", ToolKind: "read", State: "completed", Detail: "main.go"},
 		{Kind: "agent", Text: "你好。"},
+		{Kind: "you", Text: "再来一次"},
+		{Kind: "agent", Text: "好的。"},
 	}
 	tt := ui.NewTester(a.view, 1280, 840)
 	tt.Frame()
-	agents, kinds := 0, map[string]int{}
+	agents := 0
 	for _, text := range tt.Texts() {
 		if text == "Agent" {
 			agents++
 		}
+	}
+	// The panel's title is one more "Agent" than the two marks.
+	if agents != 3 {
+		t.Fatalf("the Agent marks: %d, %v", agents, tt.Texts())
+	}
+	for _, text := range tt.Texts() {
 		if text == "· 思考" || text == "· 工具" {
-			kinds[text]++
+			t.Fatalf("a mark names its kind again: %v", tt.Texts())
 		}
-	}
-	// The panel's title is one more "Agent" than the three senders.
-	if agents < 4 {
-		t.Fatalf("the agent is named %d times: %v", agents, tt.Texts())
-	}
-	if kinds["· 思考"] != 1 || kinds["· 工具"] != 1 {
-		t.Fatalf("the kinds: %v, %v", kinds, tt.Texts())
 	}
 	if _, ok := tt.Find("你"); !ok {
 		t.Fatalf("the user is not named: %v", tt.Texts())
