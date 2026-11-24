@@ -357,3 +357,41 @@ func TestAnUnknownConfigTypeIsLeftAlone(t *testing.T) {
 		t.Fatal("an option without an ID is shown")
 	}
 }
+
+// TestTheAgentContentIsAllHis checks that a thought, a tool and an answer
+// are each marked as coming from the agent, while the user's words are on
+// the other side.
+func TestTheAgentContentIsAllHis(t *testing.T) {
+	a := newApp()
+	defer a.shutdown()
+	a.root = t.TempDir()
+	a.rightPanel = true
+	a.rightSection = "agent"
+	a.agentLines = []agentLine{
+		{Kind: "you", Text: "嗨"},
+		{Kind: "thought", Text: "写点什么。", Collapsed: true},
+		{Kind: "tool", Text: "读取 main.go", ToolKind: "read", State: "completed", Detail: "main.go"},
+		{Kind: "agent", Text: "你好。"},
+	}
+	tt := ui.NewTester(a.view, 1280, 840)
+	tt.Frame()
+	agents, kinds := 0, map[string]int{}
+	for _, text := range tt.Texts() {
+		if text == "Agent" {
+			agents++
+		}
+		if text == "· 思考" || text == "· 工具" {
+			kinds[text]++
+		}
+	}
+	// The panel's title is one more "Agent" than the three senders.
+	if agents < 4 {
+		t.Fatalf("the agent is named %d times: %v", agents, tt.Texts())
+	}
+	if kinds["· 思考"] != 1 || kinds["· 工具"] != 1 {
+		t.Fatalf("the kinds: %v, %v", kinds, tt.Texts())
+	}
+	if _, ok := tt.Find("你"); !ok {
+		t.Fatalf("the user is not named: %v", tt.Texts())
+	}
+}

@@ -782,14 +782,36 @@ func (a *app) agentLineView(c *ui.Context, p palette, line *agentLine, index int
 		}
 		ui.Text(c, line.Text).FontSize(10.5).TextColor(color)
 	case "tool":
-		a.agentToolView(c, p, line)
+		ui.Column(c).FillWidth().Gap(3).Children(func() {
+			a.agentSender(c, p, "工具")
+			a.agentToolView(c, p, line)
+		})
 	case "thought":
-		a.agentThoughtView(c, p, line, index)
+		ui.Column(c).FillWidth().Gap(3).Children(func() {
+			a.agentSender(c, p, "思考")
+			a.agentThoughtView(c, p, line, index)
+		})
 	case "you":
 		a.agentMessageView(c, p, line.Text, true)
 	default:
-		a.agentMessageView(c, p, line.Text, false)
+		ui.Column(c).FillWidth().Gap(3).Children(func() {
+			a.agentSender(c, p, "")
+			a.agentMessageView(c, p, line.Text, false)
+		})
 	}
+}
+
+// agentSender marks what follows as the agent's: its thought, a tool it
+// ran, or the words it answered with. The user's words are on the right
+// instead, as the other side of the conversation.
+func (a *app) agentSender(c *ui.Context, p palette, kind string) {
+	ui.Row(c).FillWidth().Gap(5).AlignItems(ui.Center).Children(func() {
+		ui.Icon(c, agentIcon).Size(12, 12).TextColor(p.muted)
+		ui.Text(c, "Agent").FontSize(10).FontWeight(650).TextColor(p.muted)
+		if kind != "" {
+			ui.Text(c, "· "+kind).FontSize(9.5).TextColor(p.muted)
+		}
+	})
 }
 
 // agentThoughtView is what the agent thought before it answered: a folded
@@ -813,7 +835,7 @@ func (a *app) agentThoughtView(c *ui.Context, p palette, line *agentLine, index 
 				icon = chevronRightIcon
 			}
 			ui.Icon(c, icon).Size(8, 8).TextColor(p.muted)
-			ui.Text(c, "思考").FontSize(10).TextColor(p.muted)
+			ui.Text(c, "过程").FontSize(10).TextColor(p.muted)
 			ui.Textf(c, "%d 字", len([]rune(line.Text))).FontSize(9).TextColor(p.muted)
 			if !open {
 				ui.Text(c, firstLine(line.Text, 80)).FontSize(9.5).TextColor(p.muted).Grow(1).
@@ -901,21 +923,15 @@ func toolKindIcon(kind string) *ui.SVG {
 // agentMessageView is what the user or the agent said, the user's in a
 // bubble at the right, the agent's as running text.
 func (a *app) agentMessageView(c *ui.Context, p palette, text string, mine bool) {
-	label := "Agent"
-	if mine {
-		label = "你"
+	if !mine {
+		a.agentMarkdown(c, p, text, 11.5, p.text)
+		return
 	}
 	ui.Column(c).FillWidth().Gap(4).Children(func() {
-		ui.Row(c).FillWidth().Gap(6).AlignItems(ui.Center).Children(func() {
-			if mine {
-				ui.Box(c).Grow(1)
-			}
-			ui.Text(c, label).FontSize(10).FontWeight(650).TextColor(p.muted)
+		ui.Row(c).FillWidth().Children(func() {
+			ui.Box(c).Grow(1)
+			ui.Text(c, "你").FontSize(10).FontWeight(650).TextColor(p.muted)
 		})
-		if !mine {
-			a.agentMarkdown(c, p, text, 11.5, p.text)
-			return
-		}
 		ui.Row(c).FillWidth().Children(func() {
 			ui.Box(c).Grow(1)
 			ui.Box(c).MaxWidthPercent(88).Padding(8, 10).Radius(6).
