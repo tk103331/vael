@@ -63,7 +63,7 @@ func (a *app) saveAgents() {
 // startAgent runs the agent the panel chose, and makes a session of it in
 // the project.
 func (a *app) startAgent() {
-	if a.agentConn != nil {
+	if a.agentConn != nil || a.agentStarting {
 		return
 	}
 	chosen := a.agents.Chosen(a.agentChosen)
@@ -71,6 +71,10 @@ func (a *app) startAgent() {
 		a.agentStatus = "没有可用的 Agent"
 		return
 	}
+	a.agentStarting = true
+	a.ensureChats()
+	tab := a.chatActive()
+	a.chatSave()
 	a.agentRun++
 	run := a.agentRun
 	ctx, cancel := context.WithCancel(context.Background())
@@ -88,6 +92,7 @@ func (a *app) startAgent() {
 				if run != a.agentRun {
 					return
 				}
+				a.agentStarting = false
 				a.agentStatus = "启动失败"
 				a.agentCancel = nil
 				a.agentLines = append(a.agentLines, agentLine{Kind: "error", Text: err.Error()})
@@ -101,7 +106,7 @@ func (a *app) startAgent() {
 			"clientCapabilities": map[string]any{
 				"fs": map[string]any{"readTextFile": false, "writeTextFile": false},
 			},
-			"clientInfo": map[string]any{"name": "Vael", "version": "0.4.0"},
+			"clientInfo": map[string]any{"name": "Vael", "version": "0.5.0"},
 		}, &init)
 		var session acpSession
 		if err == nil {
@@ -115,6 +120,7 @@ func (a *app) startAgent() {
 				return
 			}
 			if err != nil {
+				a.agentStarting = false
 				a.agentStatus = "连接失败"
 				a.agentCancel = nil
 				detail := err.Error()
@@ -126,29 +132,132 @@ func (a *app) startAgent() {
 				cancel()
 				return
 			}
-			a.agentConn = conn
-			a.agentSession = session.SessionID
-			a.agentCanLoad = init.AgentCapabilities.LoadSession
-			a.agentCanList = init.canListSessions()
-			a.agentSessions = nil
-			a.agentConfig = session.ConfigOptions
-			a.agentModes = session.Modes.AvailableModes
-			a.agentModeID = session.Modes.CurrentModeID
-			a.agentStatus = "已连接"
-			a.agentLines = append(a.agentLines,
-				agentLine{Kind: "note", Text: name + " 已就绪。在项目 " + shortPath(cwd) + " 中工作。"})
-			if len(init.AuthMethods) > 0 {
-				names := make([]string, 0, len(init.AuthMethods))
-				for _, method := range init.AuthMethods {
-					names = append(names, method.Name)
+			a.chatWithTab(tab, func() {
+				a.agentStarting = false
+				a.agentConn = conn
+				a.agentSession = session.SessionID
+				a.agentCanLoad = init.AgentCapabilities.LoadSession
+				a.agentCanList = init.canListSessions()
+				a.agentSessions = nil
+				a.agentSessionsLoaded = false
+				a.agentConfig = session.ConfigOptions
+				a.agentModes = session.Modes.AvailableModes
+				a.agentModeID = session.Modes.CurrentModeID
+				if session.AvailableCommands != nil {
+					a.agentCommands = session.AvailableCommands
 				}
-				a.agentLines = append(a.agentLines, agentLine{
-					Kind: "note",
-					Text: "这个 Agent 需要先登录（" + strings.Join(names, "、") + "）：在终端运行一次它的登录命令即可。",
-				})
-			}
+				a.agentStatus = "已连接"
+				a.agentSessionsLoaded = false
+				a.agentLines = append(a.agentLines,
+					agentLine{Kind: "note", Text: name + " 已就绪。在项目 " + shortPath(cwd) + " 中工作。"})
+				if len(init.AuthMethods) > 0 {
+					names := make([]string, 0, len(init.AuthMethods))
+					for _, method := range init.AuthMethods {
+						names = append(names, method.Name)
+					}
+					a.agentLines = append(a.agentLines, agentLine{
+						Kind: "note",
+						Text: "这个 Agent 需要先登录（" + strings.Join(names, "、") + "）：在终端运行一次它的登录命令即可。",
+					})
+				}
+			})
 		})
 	}()
+}
+
+// ensureAgentStarted starts the agent chosen last, when its panel opens:
+// the conversation is ready without a second click.
+func (a *app) ensureAgentStarted() {
+	if a.agentConn != nil || a.agentStarting {
+		return
+	}
+	if a.agents.Chosen(a.agentChosen) == nil {
+		return
+	}
+	a.startAgent()
+}
+
+// startAgentChoice opens a new conversation with an agent type: the
+// running agent is kept when it is the same one, else it is replaced.
+func (a *app) startAgentChoice(name string) {
+	chosen := a.agents.Chosen(name)
+	if chosen == nil {
+		return
+	}
+	same := a.agentConn != nil && a.chosenAgentName() == chosen.Name
+	a.agentChosen = name
+	if same {
+		a.chatNew()
+		return
+	}
+	if a.agentConn != nil {
+		a.stopAgent()
+	}
+	a.chatNew()
+	a.startAgent()
+}
+
+// chosenAgentName is the name of the agent the panel is on.
+func (a *app) chosenAgentName() string {
+	if chosen := a.agents.Chosen(a.agentChosen); chosen != nil {
+		return chosen.Name
+	}
+	return ""
+}
+
+// agentNewChatButton creates a conversation, or starts another agent for
+// it: the floating panel lists the agent types the settings hold.
+func (a *app) agentNewChatButton(c *ui.Context, p palette) {
+	b := ui.ButtonBase(c).Size(22, 22).Radius(4).Center().Label("新对话 · 选择 Agent")
+	if a.agentNewOpen {
+		b.Background(p.selected)
+	} else if b.Hovered() {
+		b.Background(p.edge)
+	}
+	b.Children(func() { ui.Icon(c, plusIcon).Size(12, 12).TextColor(p.text) })
+	b.Tooltip("新对话 · 选择 Agent 类型")
+	if b.Clicked() {
+		a.agentNewOpen = !a.agentNewOpen
+	}
+	ui.Popover(c, b, &a.agentNewOpen, func() { a.agentTypeMenu(c, p) })
+}
+
+// agentTypeMenu is the floating panel of the agent types.
+func (a *app) agentTypeMenu(c *ui.Context, p palette) {
+	ui.Column(c).Width(280).Padding(6).Gap(2).Children(func() {
+		if len(a.agents.Items) == 0 {
+			ui.Text(c, "还没有配置 Agent").FontSize(11).TextColor(p.muted).Padding(6, 8)
+		}
+		for _, agent := range a.agents.Items {
+			agent := agent
+			current := agent.Name == a.chosenAgentName()
+			b := ui.ButtonBase(c).FillWidth().Height(36).Padding(0, 8).Gap(8).
+				Radius(5).AlignItems(ui.Center).Label("新对话 · " + agent.Name)
+			if b.Hovered() {
+				b.Background(p.edge)
+			}
+			b.Children(func() {
+				ui.Icon(c, a.agentSVG(agent)).Size(14, 14).TextColor(p.accent)
+				ui.Column(c).Grow(1).MinWidth(0).Gap(1).Children(func() {
+					ui.Text(c, agent.Name).FontSize(12).TextColor(p.text).SingleLine().Ellipsis("…")
+					ui.Text(c, agent.Command).FontSize(9.5).TextColor(p.muted).
+						Font("monospace").SingleLine().Ellipsis("…")
+				})
+				if current {
+					ui.Icon(c, checkIcon).Size(11, 11).TextColor(p.accent)
+				}
+			})
+			if b.Clicked() {
+				a.agentNewOpen = false
+				a.startAgentChoice(agent.Name)
+			}
+		}
+		ui.Divider(c).Margin(4, 0)
+		a.agentMenuItem(c, p, plusIcon, "在设置中添加…", func() {
+			a.agentNewOpen = false
+			a.settingsOpen, a.settingsSection = true, settingsAgent
+		})
+	})
 }
 
 // shortPath is the last part of a path, for the notes of the panel.
@@ -162,6 +271,7 @@ func shortPath(path string) string {
 // stopAgent ends the agent, and the session with it.
 func (a *app) stopAgent() {
 	a.agentRun++
+	a.agentStarting = false
 	conn := a.agentConn
 	session := a.agentSession
 	a.agentConn, a.agentSession = nil, ""
@@ -172,7 +282,12 @@ func (a *app) stopAgent() {
 	a.agentModes = nil
 	a.agentModeID = ""
 	a.agentOptionOpen = ""
+	a.agentCommands = nil
+	a.agentCommand = ""
+	a.agentRefs = nil
+	a.agentMentionOpen = false
 	a.agentSessions = nil
+	a.agentSessionsLoaded = false
 	a.agentHistoryOpen = false
 	a.agentCanLoad = false
 	a.agentCanList = false
@@ -204,7 +319,7 @@ func (a *app) incomingAgent(run int, message acpMessage) {
 			if run != a.agentRun {
 				return
 			}
-			a.applyAgentUpdate(update)
+			a.chatWithSession(update.SessionID, func() { a.applyAgentUpdate(update) })
 		})
 	case "session/request_permission":
 		var ask acpPermission
@@ -224,7 +339,9 @@ func (a *app) incomingAgent(run int, message acpMessage) {
 				}
 				return
 			}
-			a.queuePermission(acpPending{id: id, ask: ask})
+			a.chatWithSession(ask.SessionID, func() {
+				a.queuePermission(acpPending{id: id, ask: ask})
+			})
 		})
 	case "":
 		// An answer, which nothing here waits for.
@@ -314,7 +431,9 @@ func (a *app) applyAgentUpdate(update acpUpdate) {
 		// changed them itself.
 		a.agentConfig = update.Update.ConfigOptions
 	case "available_commands_update":
-		// The commands an agent offers: none of the panel's doing now.
+		// The slash commands the agent offers. They are shown as
+		// candidates as soon as "/" is typed in the composer.
+		a.agentCommands = update.Update.AvailableCommands
 	}
 }
 
@@ -450,10 +569,14 @@ func (a *app) sendAgentText(text string) {
 	if a.agentBusy {
 		return
 	}
-	a.agentInput = ""
+	prompt := a.agentPromptBlocks(text)
+	a.agentInput, a.agentRefs, a.agentCommand = "", nil, ""
+	a.agentMentionOpen, a.agentMentionDismissed = false, ""
+	a.agentCaret, a.agentCaretPending = 0, -1
 	a.agentLines = append(a.agentLines, agentLine{Kind: "you", Text: text})
 	a.agentBusy = true
 	a.followAgent()
+	a.chatSyncTitle()
 	run, conn, session := a.agentRun, a.agentConn, a.agentSession
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() {
@@ -461,27 +584,29 @@ func (a *app) sendAgentText(text string) {
 		var result acpPromptResult
 		err := conn.call(ctx, "session/prompt", map[string]any{
 			"sessionId": session,
-			"prompt":    []any{map[string]any{"type": "text", "text": text}},
+			"prompt":    prompt,
 		}, &result)
 		a.update(func() {
 			if run != a.agentRun {
 				return
 			}
-			a.agentBusy = false
-			if err != nil {
-				a.agentLines = append(a.agentLines, agentLine{Kind: "error", Text: err.Error()})
-				return
-			}
-			switch result.StopReason {
-			case "cancelled":
-				a.agentLines = append(a.agentLines, agentLine{Kind: "note", Text: "本轮已取消。"})
-			case "input_required":
-				a.agentLines = append(a.agentLines, agentLine{
-					Kind: "note", Text: "Agent 需要你的补充：直接回答即可。",
-				})
-			case "refusal":
-				a.agentLines = append(a.agentLines, agentLine{Kind: "note", Text: "Agent 拒绝了这个请求。"})
-			}
+			a.chatWithSession(session, func() {
+				a.agentBusy = false
+				if err != nil {
+					a.agentLines = append(a.agentLines, agentLine{Kind: "error", Text: err.Error()})
+					return
+				}
+				switch result.StopReason {
+				case "cancelled":
+					a.agentLines = append(a.agentLines, agentLine{Kind: "note", Text: "本轮已取消。"})
+				case "input_required":
+					a.agentLines = append(a.agentLines, agentLine{
+						Kind: "note", Text: "Agent 需要你的补充：直接回答即可。",
+					})
+				case "refusal":
+					a.agentLines = append(a.agentLines, agentLine{Kind: "note", Text: "Agent 拒绝了这个请求。"})
+				}
+			})
 		})
 	}()
 }
@@ -568,7 +693,7 @@ func (a *app) agentView(c *ui.Context, p palette) {
 	// The panel's title takes the top of the column around this; what is
 	// left is the conversation, and the box under it.
 	ui.Column(c).FillWidth().Grow(1).MinHeight(0).Children(func() {
-		a.agentToolbar(c, p)
+		a.agentChatTabs(c, p)
 		ui.Divider(c)
 		// The conversation takes the room the things below it leave, and
 		// scrolls what is longer, instead of pushing them out.
@@ -621,9 +746,7 @@ func (a *app) agentToolbar(c *ui.Context, p palette) {
 			selector.Background(p.edge)
 		}
 		selector.Children(func() {
-			if svg := a.currentAgentSVG(); svg != nil {
-				ui.Icon(c, svg).Size(13, 13).TextColor(p.muted)
-			}
+			ui.Icon(c, a.agentLogo()).Size(13, 13).TextColor(p.muted)
 			ui.Text(c, name).FontSize(11.5).TextColor(p.text).SingleLine().Ellipsis("…")
 			ui.Icon(c, chevronDownIcon).Size(9, 9).TextColor(p.muted)
 		})
@@ -631,12 +754,8 @@ func (a *app) agentToolbar(c *ui.Context, p palette) {
 			a.agentMenuOpen = !a.agentMenuOpen
 		}
 		ui.Popover(c, selector, &a.agentMenuOpen, func() { a.agentMenu(c, p) })
-		if a.agentConn != nil {
-			if smallIconButton(c, plusIcon, "新建会话", p) {
-				a.restartAgentSession()
-			}
-			a.agentHistoryButton(c, p)
-		}
+		a.agentNewChatButton(c, p)
+		a.agentHistoryButton(c, p)
 		ui.Box(c).Grow(1)
 		// The turn is stopped by the one button in the composer: a second
 		// stop here would be the same action twice.
@@ -729,6 +848,9 @@ func (a *app) restartAgentSession() {
 	if a.agentConn == nil {
 		return
 	}
+	a.ensureChats()
+	tab := a.chatActive()
+	a.chatSave()
 	a.agentRun++
 	conn, cwd := a.agentConn, a.root
 	run := a.agentRun
@@ -748,12 +870,18 @@ func (a *app) restartAgentSession() {
 				a.agentLines = append(a.agentLines, agentLine{Kind: "error", Text: err.Error()})
 				return
 			}
-			a.agentSession = session.SessionID
-			a.agentConfig = session.ConfigOptions
-			a.agentModes = session.Modes.AvailableModes
-			a.agentModeID = session.Modes.CurrentModeID
-			a.agentStatus = "已连接"
-			a.agentLines = append(a.agentLines, agentLine{Kind: "note", Text: "已开始新的会话。"})
+			a.chatWithTab(tab, func() {
+				a.agentSession = session.SessionID
+				a.agentConfig = session.ConfigOptions
+				a.agentModes = session.Modes.AvailableModes
+				a.agentModeID = session.Modes.CurrentModeID
+				if session.AvailableCommands != nil {
+					a.agentCommands = session.AvailableCommands
+				}
+				a.agentStatus = "已连接"
+				a.agentSessionsLoaded = false
+				a.agentLines = append(a.agentLines, agentLine{Kind: "note", Text: "已开始新的会话。"})
+			})
 		})
 	}()
 }
@@ -776,7 +904,10 @@ func (a *app) cancelAgentPrompt() {
 
 // agentEmptyView says what the panel does, before anything runs.
 func (a *app) agentEmptyView(c *ui.Context, p palette) {
-	ui.Text(c, "让 Agent 读取项目、修改代码、运行命令。").FontSize(12).TextColor(p.text)
+	ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+		ui.Icon(c, a.agentLogo()).Size(26, 26).TextColor(p.accent)
+		ui.Text(c, "让 Agent 读取项目、修改代码、运行命令。").FontSize(12).TextColor(p.text)
+	})
 	ui.Text(c, "Agent 通过 ACP（Agent Client Protocol）启动：选一个 Agent，点 ▶ 启动，"+
 		"它会在此项目里开会话。").FontSize(11).TextColor(p.muted)
 	ui.Text(c, "在设置中可以接入 ACP Registry 里的 Agent，或用自己的启动命令。").FontSize(11).TextColor(p.muted)
@@ -810,12 +941,8 @@ func (a *app) agentLineView(c *ui.Context, p palette, line *agentLine, index int
 // agentSender is the mark at the top of what the agent says, before its
 // thought, tools and words. The user's words are on the other side.
 func (a *app) agentSender(c *ui.Context, p palette) {
-	mark := agentIcon
-	if svg := a.currentAgentSVG(); svg != nil {
-		mark = svg
-	}
 	ui.Row(c).FillWidth().Gap(5).AlignItems(ui.Center).Children(func() {
-		ui.Icon(c, mark).Size(13, 13).TextColor(p.muted)
+		ui.Icon(c, a.agentLogo()).Size(13, 13).TextColor(p.muted)
 		ui.Text(c, "Agent").FontSize(10).FontWeight(650).TextColor(p.muted)
 	})
 }
@@ -1241,12 +1368,14 @@ func (a *app) agentComposer(c *ui.Context, p palette) {
 		if len(a.agentConfig) > 0 || len(a.agentModes) > 0 {
 			a.agentConfigBar(c, p)
 		}
+		a.agentRefChips(c, p)
 		// The box sits in a box of its own, so that the button can float
 		// in its corner: two lines to write in, up to six as the words
 		// grow, with room on the right for the button.
+		var input ui.Element
 		ui.Box(c).FillWidth().Children(func() {
-			input := ui.TextArea(c, &a.agentInput).FillWidth().Lines(2, 6).MinHeight(46).
-				Padding(6, 40, 6, 8).Placeholder("询问 Agent…").Label("Agent 输入")
+			input = ui.TextArea(c, &a.agentInput).FillWidth().Lines(2, 6).MinHeight(46).
+				Padding(6, 40, 6, 8).Placeholder("询问 Agent… @ 引用文件 / 使用命令").Label("Agent 输入")
 			input.OnTextKey(func(k ui.TextKey) bool {
 				// Enter sends; Shift+Enter breaks the line.
 				if k.Key != ui.KeyEnter || k.Mods != 0 || a.agentBusy {
@@ -1261,7 +1390,16 @@ func (a *app) agentComposer(c *ui.Context, p palette) {
 			})
 			a.agentSendButton(c, p)
 		})
-		hint := "Enter 发送 · Shift+Enter 换行"
+		_, caret := input.TextSelection()
+		a.agentCaret = caret
+		if a.agentCaretPending >= 0 {
+			input.SetTextSelection(a.agentCaretPending, a.agentCaretPending)
+			a.agentCaret = a.agentCaretPending
+			a.agentCaretPending = -1
+		}
+		a.updateAgentToken()
+		a.agentCompletion(c, p)
+		hint := "Enter 发送 · Shift+Enter 换行 · @ 引用文件 · / 命令"
 		if a.agentConn == nil {
 			hint = "先启动 Agent 才能发送"
 		} else if a.agentBusy {

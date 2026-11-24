@@ -52,6 +52,9 @@ func (a *app) agentHistoryMenu(c *ui.Context, p palette) {
 			}
 		})
 		switch {
+		case a.agentConn == nil:
+			ui.Text(c, "先启动 Agent 再查看会话历史。").
+				FontSize(10).TextColor(p.muted).Padding(4, 4)
 		case !a.agentCanList:
 			ui.Text(c, "这个 Agent 不支持列出会话（session/list）。").
 				FontSize(10).TextColor(p.muted).Padding(4, 4)
@@ -62,32 +65,49 @@ func (a *app) agentHistoryMenu(c *ui.Context, p palette) {
 		case len(a.agentSessions) == 0:
 			ui.Text(c, "这个项目里还没有历史会话。").FontSize(10).TextColor(p.muted).Padding(4, 4)
 		default:
-			ui.Scroll(c).FillWidth().MaxHeight(300).Children(func() {
+			now := time.Now()
+			ui.Scroll(c).FillWidth().MaxHeight(340).Children(func() {
 				ui.Column(c).FillWidth().Gap(1).Children(func() {
-					for _, session := range a.agentSessions {
-						session := session
-						title := session.Title
-						if strings.TrimSpace(title) == "" {
-							title = shortSessionID(session.SessionID)
-						}
-						b := ui.ButtonBase(c).FillWidth().Height(38).Padding(0, 8).Gap(6).
-							Radius(5).AlignItems(ui.Center).Label("打开 " + title)
-						if b.Hovered() {
-							b.Background(p.edge)
-						}
-						b.Children(func() {
-							ui.Column(c).Grow(1).MinWidth(0).Gap(1).Children(func() {
-								ui.Text(c, title).FontSize(11).TextColor(p.text).SingleLine().Ellipsis("…")
-								ui.Text(c, shortSessionID(session.SessionID)+" · "+sessionWhen(session.UpdatedAt)).
-									FontSize(9).TextColor(p.muted).SingleLine().Ellipsis("…")
-							})
-							if session.SessionID == a.agentSession {
-								ui.Icon(c, checkIcon).Size(11, 11).TextColor(p.accent)
+					for _, period := range chatPeriods {
+						var group []acpSessionInfo
+						for _, session := range a.agentSessions {
+							if chatPeriod(session.UpdatedAt, now) == period {
+								group = append(group, session)
 							}
+						}
+						if len(group) == 0 {
+							continue
+						}
+						ui.Row(c).FillWidth().Height(20).Padding(2, 6, 0, 6).
+							AlignItems(ui.Center).Gap(4).Children(func() {
+							ui.Text(c, period).FontSize(9.5).FontWeight(650).TextColor(p.muted).Grow(1)
+							ui.Textf(c, "%d", len(group)).FontSize(9).TextColor(p.muted).FontFeatures("tnum")
 						})
-						if b.Clicked() {
-							a.agentHistoryOpen = false
-							a.loadAgentSession(session)
+						for _, session := range group {
+							session := session
+							title := session.Title
+							if strings.TrimSpace(title) == "" {
+								title = shortSessionID(session.SessionID)
+							}
+							b := ui.ButtonBase(c).FillWidth().Height(38).Padding(0, 8).Gap(6).
+								Radius(5).AlignItems(ui.Center).Label("打开 " + title)
+							if b.Hovered() {
+								b.Background(p.edge)
+							}
+							b.Children(func() {
+								ui.Column(c).Grow(1).MinWidth(0).Gap(1).Children(func() {
+									ui.Text(c, title).FontSize(11).TextColor(p.text).SingleLine().Ellipsis("…")
+									ui.Text(c, shortSessionID(session.SessionID)+" · "+sessionWhen(session.UpdatedAt)).
+										FontSize(9).TextColor(p.muted).SingleLine().Ellipsis("…")
+								})
+								if session.SessionID == a.agentSession {
+									ui.Icon(c, checkIcon).Size(11, 11).TextColor(p.accent)
+								}
+							})
+							if b.Clicked() {
+								a.agentHistoryOpen = false
+								a.openHistorySession(session)
+							}
 						}
 					}
 				})
@@ -120,8 +140,10 @@ func (a *app) loadAgentSessions() {
 			a.agentHistoryLoading = false
 			if err != nil {
 				a.agentHistoryErr = "读取失败：" + err.Error()
+				a.agentSessionsLoaded = true
 				return
 			}
+			a.agentSessionsLoaded = true
 			sessions := list.Sessions
 			sort.SliceStable(sessions, func(i, j int) bool {
 				return sessions[i].UpdatedAt > sessions[j].UpdatedAt
@@ -139,6 +161,9 @@ func (a *app) loadAgentSession(session acpSessionInfo) {
 		return
 	}
 	conn, run, cwd := a.agentConn, a.agentRun, a.root
+	a.ensureChats()
+	tab := a.chatActive()
+	a.chatSave()
 	a.agentLoading = true
 	a.agentLines = nil
 	a.agentStatus = "加载会话中…"
@@ -155,23 +180,29 @@ func (a *app) loadAgentSession(session acpSessionInfo) {
 			if run != a.agentRun {
 				return
 			}
-			a.agentLoading = false
-			if err != nil {
-				a.agentStatus = "加载失败"
-				a.agentLines = append(a.agentLines, agentLine{Kind: "error", Text: err.Error()})
-				return
-			}
-			if loaded.SessionID != "" {
-				a.agentSession = loaded.SessionID
-			} else {
-				a.agentSession = session.SessionID
-			}
-			a.agentConfig = loaded.ConfigOptions
-			a.agentModes = loaded.Modes.AvailableModes
-			a.agentModeID = loaded.Modes.CurrentModeID
-			a.agentStatus = "已连接"
-			a.agentLines = append(a.agentLines, agentLine{Kind: "note", Text: "已加载会话：" + session.Title})
-			a.followAgent()
+			a.chatWithTab(tab, func() {
+				a.agentLoading = false
+				if err != nil {
+					a.agentStatus = "加载失败"
+					a.agentLines = append(a.agentLines, agentLine{Kind: "error", Text: err.Error()})
+					return
+				}
+				if loaded.SessionID != "" {
+					a.agentSession = loaded.SessionID
+				} else {
+					a.agentSession = session.SessionID
+				}
+				a.agentConfig = loaded.ConfigOptions
+				a.agentModes = loaded.Modes.AvailableModes
+				a.agentModeID = loaded.Modes.CurrentModeID
+				if loaded.AvailableCommands != nil {
+					a.agentCommands = loaded.AvailableCommands
+				}
+				a.agentStatus = "已连接"
+				a.agentSessionsLoaded = false
+				a.agentLines = append(a.agentLines, agentLine{Kind: "note", Text: "已加载会话：" + session.Title})
+				a.followAgent()
+			})
 		})
 	}()
 }

@@ -31,7 +31,7 @@ func TestTheAgentHistoryListsAndLoads(t *testing.T) {
 		t.Fatal(err)
 	}
 	pumpUntil(t, queue, func() bool {
-		return a.agentSession == "session-old-123456789" && agentSays(a.agentLines, "agent", "旧回答")
+		return a.agentSession == "session-old-123456789" && agentSays(a.agentLines, "agent", "旧回答") && !a.agentLoading
 	})
 	if !agentSays(a.agentLines, "you", "旧问题") {
 		t.Fatalf("the replay lost what the user said: %+v", a.agentLines)

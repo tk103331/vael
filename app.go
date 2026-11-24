@@ -24,6 +24,7 @@ type fileTab struct {
 	path, original string
 	state          *editor.State
 	diff           *editor.DiffState
+	commitDiff     *commitDiff
 	saving         bool
 	// The indentation of the text, cached for the buffer version it was
 	// read from.
@@ -153,6 +154,8 @@ type app struct {
 	guides, autoClose, numbers       bool
 	rightPanel                       bool
 	rightShare, logShare             float32
+	commitShare                      float32
+	diffLayout                       editor.DiffLayout
 	rightSection                     string
 	bottomTab                        string
 	section, filter, message, commit string
@@ -243,6 +246,7 @@ type app struct {
 	agentCanLoad                     bool
 	agentCanList                     bool
 	agentSessions                    []acpSessionInfo
+	agentSessionsLoaded              bool
 	agentHistoryOpen                 bool
 	agentHistoryLoading              bool
 	agentHistoryErr                  string
@@ -254,6 +258,22 @@ type app struct {
 	agentModeID                      string
 	agentOptionOpen                  string
 	agentDenied                      map[string]string
+	agentStarting                    bool
+	agentPanelActive                 bool
+	agentNewOpen                     bool
+	chatTabs                         []*chatTab
+	chatSel, chatSeq                 int
+	chatListQuery                    string
+	agentCommands                    []acpAvailableCommand
+	agentRefs                        []agentRef
+	agentCommand                     string
+	agentMentionOpen                 bool
+	agentMentionQuery                string
+	agentMentionDir                  bool
+	agentMentionDismissed            string
+	agentMentionKind                 byte
+	agentTokenStart, agentTokenEnd   int
+	agentCaret, agentCaretPending    int
 	agentScroll                      ui.ScrollState
 	registry                         []acpRegistryAgent
 	registryErr                      string
@@ -276,7 +296,7 @@ type app struct {
 
 func newApp() *app {
 	ctx, cancel := context.WithCancel(context.Background())
-	return &app{projectCtx: ctx, projectCancel: cancel, backend: core.NewLocal(), lsps: map[string]*lspSession{}, pendingCaret: map[string]editor.Pos{}, sideWidth: 248, rightShare: 72, logShare: 74, rightSection: "outline", bottomTab: "terminal", editorShare: 62, splitShare: 50, stamps: map[string]workspace.Stamp{}, stale: map[string]string{}, commandUses: map[string]int{}, entries: map[string][]workspace.Entry{}, expanded: map[string]bool{}, loading: map[string]bool{}, themeID: "vael-dark", iconID: "badges", fontFamily: "monospace", minimap: true, sidebar: true, section: "files", guides: true, autoClose: true, numbers: true, selected: -1, termSelected: -1, registryStatus: map[string]string{}, registryHas: map[string]bool{}, agentIcons: map[string]*ui.SVG{}, agentIconBusy: map[string]bool{}, logLocalOpen: true, logRemoteOpen: true, logRemoteClosed: map[string]bool{}, logGraphOn: true, logDetailOn: true}
+	return &app{projectCtx: ctx, projectCancel: cancel, backend: core.NewLocal(), lsps: map[string]*lspSession{}, pendingCaret: map[string]editor.Pos{}, sideWidth: 248, rightShare: 72, logShare: 74, rightSection: "outline", bottomTab: "terminal", editorShare: 62, splitShare: 50, stamps: map[string]workspace.Stamp{}, stale: map[string]string{}, commandUses: map[string]int{}, entries: map[string][]workspace.Entry{}, expanded: map[string]bool{}, loading: map[string]bool{}, themeID: "vael-dark", iconID: "badges", fontFamily: "monospace", minimap: true, sidebar: true, section: "files", guides: true, autoClose: true, numbers: true, selected: -1, termSelected: -1, registryStatus: map[string]string{}, registryHas: map[string]bool{}, agentIcons: map[string]*ui.SVG{}, agentIconBusy: map[string]bool{}, agentCaretPending: -1, logLocalOpen: true, logRemoteOpen: true, logRemoteClosed: map[string]bool{}, logGraphOn: true, logDetailOn: true}
 }
 func (a *app) active() *fileTab {
 	if a.split && a.focusPane == 1 {
@@ -534,6 +554,10 @@ func (a *app) openFileAt(path string, start, end int) {
 				if m.Item("重命名…").Chosen() {
 					a.renameTarget, a.renameValue = tab.path, filepath.Base(tab.path)
 				}
+				m.Separator()
+				if m.Item("添加到对话").Chosen() {
+					a.addSelectionToAgent(tab)
+				}
 			}
 			a.tabs = append(a.tabs, tab)
 			a.focusTab(len(a.tabs) - 1)
@@ -565,6 +589,9 @@ func (a *app) closeTab(index int) {
 	close := func() {
 		for i, tab := range a.tabs {
 			if tab == f {
+				if f.commitDiff != nil && f.commitDiff.cancel != nil {
+					f.commitDiff.cancel()
+				}
 				a.tabs = append(a.tabs[:i], a.tabs[i+1:]...)
 				if i < a.selected {
 					a.selected--

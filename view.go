@@ -43,8 +43,6 @@ var sunIcon = lineIcon(`<circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="
 var filePlusIcon = lineIcon(`<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/>`)
 var folderPlusIcon = lineIcon(`<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><line x1="12" y1="11" x2="12" y2="17"/><line x1="9" y1="14" x2="15" y2="14"/>`)
 var refreshIcon = lineIcon(`<polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>`)
-var wrapIcon = lineIcon(`<line x1="3" y1="5" x2="21" y2="5"/><line x1="3" y1="19" x2="21" y2="19"/><line x1="3" y1="12" x2="13" y2="12"/><line x1="13" y1="12" x2="18" y2="12"/><polyline points="16 10 18 12 16 14"/>`)
-var saveIcon = lineIcon(`<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>`)
 var trashIcon = lineIcon(`<polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>`)
 var xIcon = lineIcon(`<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>`)
 var chevronDownIcon = lineIcon(`<polyline points="6 9 12 15 18 9"/>`)
@@ -268,10 +266,26 @@ func (a *app) rightView(c *ui.Context, p palette) {
 		// that their lines meet.
 		ui.Row(c).FillWidth().Height(36).Padding(0, 8, 0, 10).Gap(4).AlignItems(ui.Center).
 			BorderWidth(0, 0, 1, 0).BorderColor(p.edge).Children(func() {
-			ui.Text(c, item.Title).FontSize(12).FontWeight(650).TextColor(p.text).Grow(1)
-			if iconButton(c, xIcon, "关闭面板", false, p) {
-				a.rightPanel = false
+			if item.ID == "agent" {
+				ui.Icon(c, a.agentLogo()).Size(14, 14).TextColor(p.accent)
+				ui.Text(c, item.Title).FontSize(12).FontWeight(650).TextColor(p.text)
+				if name := a.chosenAgentName(); name != "" {
+					ui.Text(c, "· "+name).FontSize(11).TextColor(p.muted).SingleLine().Ellipsis("…")
+				}
+				ui.Box(c).Grow(1)
+				if a.agentStatus != "" {
+					ui.Text(c, a.agentStatus).FontSize(9.5).TextColor(p.muted).SingleLine().Ellipsis("…")
+				}
+				a.agentHistoryButton(c, p)
+				a.agentNewChatButton(c, p)
+				if a.agentConn != nil {
+					if smallIconButton(c, xCircleIcon, "停止 Agent", p) {
+						a.stopAgent()
+					}
+				}
+				return
 			}
+			ui.Text(c, item.Title).FontSize(12).FontWeight(650).TextColor(p.text).Grow(1)
 		})
 		if item.Header != nil {
 			item.Header(a, c, p)
@@ -356,6 +370,9 @@ func (a *app) windowControls(c *ui.Context, p palette) {
 func (a *app) editorTab(c *ui.Context, p palette, pane, i int, tab *fileTab) {
 	active := i == a.paneIndex(pane)
 	name := filepath.Base(tab.path)
+	if tab.commitDiff != nil {
+		name = tab.path
+	}
 	b := ui.ButtonBase(c).Height(28).Padding(0, 6).Radius(6).Gap(5).Label(name)
 	if active {
 		b.Background(p.selected)
@@ -367,7 +384,7 @@ func (a *app) editorTab(c *ui.Context, p palette, pane, i int, tab *fileTab) {
 		if active {
 			fg = p.text
 		}
-		if tab.diff != nil {
+		if tab.diff != nil || tab.commitDiff != nil {
 			ui.Icon(c, diffIcon).Size(12, 12).TextColor(fg)
 		} else {
 			ui.Icon(c, fileIcon).Size(12, 12).TextColor(fg)
@@ -387,7 +404,7 @@ func (a *app) editorTab(c *ui.Context, p palette, pane, i int, tab *fileTab) {
 			a.closeTab(i)
 		}
 	})
-	// The tooltip says where the file is.
+	// The tooltip says where the file is, or what the conversation is.
 	b.Tooltip(tab.path)
 	if b.Clicked() {
 		a.focusPaneOn(pane)
@@ -418,6 +435,13 @@ func quietRow(c *ui.Context, text string, selected bool, p palette) ui.Element {
 func (a *app) view(c *ui.Context) {
 	p := a.colors()
 	c.SetTheme(a.editorTheme())
+	// Opening the agent's panel starts the agent chosen last, so that
+	// the conversation is ready to use.
+	panelAgent := a.rightPanel && a.rightSection == "agent"
+	if panelAgent && !a.agentPanelActive {
+		a.ensureAgentStarted()
+	}
+	a.agentPanelActive = panelAgent
 	ui.Column(c).Fill().Background(p.wash).Children(func() {
 		ui.Row(c).FillWidth().Height(36).AlignItems(ui.Center).Gap(8).Padding(0, 0, 0, 12).Children(func() {
 			mac := runtime.GOOS == "darwin"
@@ -640,6 +664,7 @@ func (a *app) view(c *ui.Context) {
 	a.quickOpenView(c, p)
 	a.recentView(c, p)
 	a.paletteView(c, p)
+	a.toastView(c, p)
 }
 
 // sidebarView is the panel of the left the bar chose: the files of the
@@ -780,6 +805,15 @@ func (a *app) tree(c *ui.Context, p palette, dir string, depth int, width float3
 				a.deleteTarget = e.Path
 			}
 			m.Separator()
+			if m.Item("添加到对话").Chosen() {
+				kind := "file"
+				if e.Dir {
+					kind = "dir"
+				}
+				if rel, err := a.relativePath(a.root, e.Path); err == nil {
+					a.addAgentRef(agentRef{Kind: kind, Path: e.Path, Rel: rel})
+				}
+			}
 			if m.Item("复制路径").Chosen() {
 				mygo.Clipboard.WriteText(e.Path)
 			}
@@ -838,7 +872,13 @@ func (a *app) editorPane(c *ui.Context, p palette, pane int) {
 				}
 			})
 		}
+		if f.commitDiff != nil {
+			a.commitDiffView(c, p, f.commitDiff, pane)
+			return
+		}
 		if f.diff != nil {
+			a.fileDiffToolbar(c, p)
+			f.diff.Layout = a.diffLayout
 			editor.DiffView(c, f.diff).FillWidth().Grow(1)
 			return
 		}
@@ -858,8 +898,7 @@ func (a *app) editorPane(c *ui.Context, p palette, pane int) {
 	})
 }
 
-// editorTabStrip is a pane's bar of tabs, with the actions of the file the
-// pane shows.
+// editorTabStrip is a pane's bar of tabs and its split control.
 func (a *app) editorTabStrip(c *ui.Context, p palette, pane int) {
 	tabCount := len(a.tabs)
 	ui.Row(c).FillWidth().Height(36).Shrink(0).AlignItems(ui.Center).
@@ -886,17 +925,6 @@ func (a *app) editorTabStrip(c *ui.Context, p palette, pane int) {
 			})
 		})
 		ui.Row(c).Padding(0, 6).Gap(2).AlignItems(ui.Center).Children(func() {
-			if f := a.paneTab(pane); f != nil && f.state != nil {
-				if iconButton(c, searchIcon, "查找与替换", false, p) {
-					f.state.Run(editorFind)
-				}
-				if iconButton(c, wrapIcon, "自动换行", a.wrap, p) {
-					a.wrap = !a.wrap
-				}
-				if iconButton(c, saveIcon, "保存", false, p) {
-					a.save()
-				}
-			}
 			if pane == 1 {
 				if iconButton(c, xIcon, "取消拆分", false, p) {
 					a.splitEditor()
@@ -1175,89 +1203,16 @@ func (a *app) gitView(c *ui.Context, p palette) {
 		}
 		return
 	}
-	root := a.repo.Root
-	backend := a.backend
-	ctx := a.projectCtx
 	if len(a.commits) == 0 && !a.commitsLoading {
 		a.loadCommits()
 	}
-	commitInput := ui.TextInput(c, &a.commit).FillWidth().Height(36).Padding(3, 8).Radius(6).
-		Placeholder("提交信息…")
-	if ui.PrimaryButton(c, "提交已暂存的更改").FillWidth().Height(36).Radius(6).Disabled(a.gitBusy || strings.TrimSpace(a.commit) == "").Clicked() || commitInput.Submitted() && strings.TrimSpace(a.commit) != "" {
-		message := a.commit
-		a.gitAction(func() error { _, err := backend.Git(ctx, root, "commit", "-m", message); return err })
+	if a.commitShare <= 0 || a.commitShare >= 100 {
+		a.commitShare = 60
 	}
-	ui.Scroll(c).FillWidth().Grow(1).Children(func() {
-		ui.Column(c).FillWidth().Gap(12).Children(func() {
-			for _, staged := range []bool{true, false} {
-				title := "工作区更改"
-				if staged {
-					title = "已暂存的更改"
-				}
-				a.gitSectionCount(c, p, title, a.changeCount(staged))
-				count := 0
-				for _, change := range a.repo.Changes {
-					change := change
-					if staged && !change.Staged() || !staged && !change.Unstaged() {
-						continue
-					}
-					count++
-					ui.Row(c).FillWidth().Gap(3).AlignItems(ui.Center).Children(func() {
-						b := ui.ButtonBase(c).Grow(1).MinWidth(0).Height(30).Padding(0, 6).Radius(5).Label(change.Path)
-						if b.Hovered() {
-							b.Background(p.edge)
-						}
-						b.Children(func() {
-							ui.Text(c, change.Code+"  "+change.Path).FontSize(11).TextColor(p.text).SingleLine().Ellipsis("…")
-						})
-						if b.Clicked() {
-							a.openDiff(change, staged)
-						}
-						label := "+"
-						if staged {
-							label = "−"
-						}
-						if !a.gitBusy && quiet(c, label, false, p) {
-							a.gitAction(func() error {
-								if staged {
-									return backend.Unstage(ctx, root, change)
-								}
-								return backend.Stage(ctx, root, change)
-							})
-						}
-						if !staged && !a.gitBusy && quiet(c, "↺", false, p) {
-							discarded := change
-							a.confirm = &confirmation{"放弃更改？", "“" + discarded.Path + "”在工作区中的修改将被丢弃，无法撤销。", func() { a.discardChange(discarded) }}
-						}
-						if quiet(c, "↗", false, p) {
-							a.openFile(a.joinPath(root, change.Path))
-						}
-					})
-				}
-				if count == 0 {
-					ui.Text(c, "没有更改").FontSize(11.5).TextColor(p.muted).Padding(0, 2)
-				}
-			}
-			a.gitSectionCount(c, p, "提交历史", 0)
-			if a.commitsLoading {
-				ui.Text(c, "正在读取提交…").FontSize(11.5).TextColor(p.muted).Padding(0, 2)
-			}
-			for _, line := range a.commits {
-				line := line
-				hash, subject := line, ""
-				if i := strings.Index(line, " "); i > 0 {
-					hash, subject = line[:i], strings.TrimSpace(line[i+1:])
-				}
-				ui.Row(c).FillWidth().Height(24).Gap(8).AlignItems(ui.Center).Children(func() {
-					ui.Text(c, hash).Font("monospace").FontSize(10.5).TextColor(p.accent).Width(56).Shrink(0)
-					ui.Text(c, subject).FontSize(11.5).TextColor(p.text).Grow(1).MinWidth(0).SingleLine().Ellipsis("…")
-				})
-			}
-			if len(a.commits) == 0 && !a.commitsLoading {
-				ui.Text(c, "没有提交").FontSize(11.5).TextColor(p.muted).Padding(0, 2)
-			}
-		})
-	})
+	ui.SplitVerticalPercent(c, &a.commitShare,
+		func() { a.gitChangesView(c, p) },
+		func() { a.gitHistoryView(c, p) }).
+		FillWidth().Grow(1).MinHeight(0).Label("Commit 面板分隔条").SplitReset(60)
 }
 func (a *app) dialogs(c *ui.Context, p palette) {
 	a.connectionDialog(c, p)

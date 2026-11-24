@@ -98,6 +98,11 @@ func (a *app) closeOtherTabs(keep int) {
 	}
 	do := func() {
 		kept := a.tabs[keep]
+		for _, tab := range a.tabs {
+			if tab != kept && tab.commitDiff != nil && tab.commitDiff.cancel != nil {
+				tab.commitDiff.cancel()
+			}
+		}
 		a.tabs = []*fileTab{kept}
 		a.selected = 0
 		if a.split {
@@ -116,6 +121,11 @@ func (a *app) closeOtherTabs(keep int) {
 func (a *app) closeAllTabs() {
 	dirty := a.dirty()
 	do := func() {
+		for _, tab := range a.tabs {
+			if tab.commitDiff != nil && tab.commitDiff.cancel != nil {
+				tab.commitDiff.cancel()
+			}
+		}
 		a.tabs = nil
 		a.selected = -1
 		a.updateWatchTargets()
@@ -197,7 +207,7 @@ func (a *app) breadcrumb(c *ui.Context, p palette) {
 
 // breadcrumbOf is the place of a file in the project, as a row of segments.
 func (a *app) breadcrumbOf(c *ui.Context, p palette, f *fileTab) {
-	if f == nil {
+	if f == nil || f.commitDiff != nil {
 		return
 	}
 	rel := f.path

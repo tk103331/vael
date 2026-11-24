@@ -90,6 +90,18 @@ func TestACPAgentHelper(t *testing.T) {
 					},
 				},
 			})
+			write(map[string]any{
+				"jsonrpc": "2.0", "method": "session/update",
+				"params": map[string]any{
+					"sessionId": "s1",
+					"update": map[string]any{
+						"sessionUpdate": "available_commands_update",
+						"availableCommands": []any{
+							map[string]any{"name": "review", "description": "审查代码"},
+						},
+					},
+				},
+			})
 		case "session/list":
 			write(map[string]any{
 				"jsonrpc": "2.0", "id": *message.ID,
@@ -313,13 +325,23 @@ func TestACPConnSpeaks(t *testing.T) {
 	if result.StopReason != "end_turn" {
 		t.Fatalf("prompt: %+v", result)
 	}
-	select {
-	case update := <-updates:
-		if update.Update.SessionUpdate != "agent_message_chunk" || update.Words() != "你好" {
-			t.Fatalf("update: %+v", update)
+	deadline := time.After(5 * time.Second)
+	for {
+		select {
+		case update := <-updates:
+			if update.Update.SessionUpdate == "available_commands_update" {
+				if len(update.Update.AvailableCommands) != 1 || update.Update.AvailableCommands[0].Name != "review" {
+					t.Fatalf("commands: %+v", update.Update.AvailableCommands)
+				}
+				continue
+			}
+			if update.Update.SessionUpdate != "agent_message_chunk" || update.Words() != "你好" {
+				t.Fatalf("update: %+v", update)
+			}
+			return
+		case <-deadline:
+			t.Fatal("the agent's update did not arrive")
 		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("the agent's update did not arrive")
 	}
 }
 

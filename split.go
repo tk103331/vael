@@ -38,9 +38,14 @@ func (a *app) splitEditor() {
 		}
 	}
 	if a.splitPath == "" && len(a.tabs) > 1 {
-		a.splitPath = a.tabs[(a.selected+1)%len(a.tabs)].path
+		for _, f := range a.tabs {
+			if f.state != nil && f.diff == nil && f.path != a.tabs[a.selected].path {
+				a.splitPath = f.path
+				break
+			}
+		}
 	}
-	if a.splitPath == "" {
+	if a.splitPath == "" && a.tabs[a.selected].state != nil {
 		a.splitPath = a.tabs[a.selected].path
 	}
 	a.focusPane = 0

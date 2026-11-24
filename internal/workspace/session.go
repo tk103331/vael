@@ -17,6 +17,8 @@ type Session struct {
 	Files                          []OpenFile
 	Active                         string
 	SideWidth, EditorShare         float32
+	CommitShare                    float32
+	DiffUnified                    bool
 	Sidebar, Terminal, Dark, Wrap  bool
 	RightPanel                     bool
 	Section                        string

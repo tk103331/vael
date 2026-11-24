@@ -55,6 +55,15 @@ func (a *app) currentAgentSVG() *ui.SVG {
 	return a.agentSVG(*chosen)
 }
 
+// agentLogo is the icon of the current agent, or the built-in mark while
+// its registry icon is missing or still being fetched.
+func (a *app) agentLogo() *ui.SVG {
+	if svg := a.currentAgentSVG(); svg != nil {
+		return svg
+	}
+	return agentIcon
+}
+
 // agentIconPath is where an icon is kept, by the hash of its address.
 func (a *app) agentIconPath(key string) string {
 	if a.agentsPath == "" {

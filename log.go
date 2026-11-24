@@ -566,11 +566,11 @@ func logChip(c *ui.Context, p palette, ref logRef) {
 // logCodeColor is the color of the status of a changed file.
 func logCodeColor(code string, p palette) ui.Color {
 	switch {
-	case strings.HasPrefix(code, "A"):
+	case strings.HasPrefix(code, "A"), code == "?":
 		return p.success
-	case strings.HasPrefix(code, "D"):
+	case strings.HasPrefix(code, "D"), code == "U":
 		return p.danger
-	case strings.HasPrefix(code, "M"):
+	case strings.HasPrefix(code, "M"), code == "T":
 		return p.warn
 	case strings.HasPrefix(code, "R"), strings.HasPrefix(code, "C"):
 		return p.accent
@@ -618,6 +618,10 @@ func (a *app) logRow(c *ui.Context, p palette, commit logCommit) {
 	})
 	row.Cursor(ui.CursorPointer)
 	row.ContextMenu(func(m *ui.Menu) {
+		if m.Item("查看提交 Diff").Chosen() {
+			a.openCommitDiff(commit.Hash, commit.Subject)
+		}
+		m.Separator()
 		if m.Item("复制哈希").Chosen() {
 			mygo.Clipboard.WriteText(commit.Hash)
 		}
@@ -632,7 +636,9 @@ func (a *app) logRow(c *ui.Context, p palette, commit logCommit) {
 			a.branchFrom, a.branchName = commit.Hash, ""
 		}
 	})
-	if row.Clicked() {
+	if row.DoubleClicked() {
+		a.openCommitDiff(commit.Hash, commit.Subject)
+	} else if row.Clicked() {
 		a.logSelected = commit.Row
 		a.loadLogDetail(commit.Hash)
 	}

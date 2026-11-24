@@ -67,6 +67,9 @@ type acpSession struct {
 	// ConfigOptions are the selectors the agent offers for the session:
 	// its model, its mode, how much it thinks, and more.
 	ConfigOptions []acpConfigOption `json:"configOptions"`
+	// AvailableCommands are the slash commands of the session, when an
+	// agent sends them with the session rather than in an update.
+	AvailableCommands []acpAvailableCommand `json:"availableCommands"`
 	// Modes are the ways the agent can be told to work, before session
 	// config options replaced them.
 	Modes struct {
@@ -100,6 +103,17 @@ type acpConfigChoice struct {
 	Value       string `json:"value"`
 	Name        string `json:"name"`
 	Description string `json:"description"`
+}
+
+// acpAvailableCommand is a slash command an agent offers during a session.
+// https://agentclientprotocol.com/protocol/v1/slash-commands
+type acpAvailableCommand struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Input       struct {
+		Hint string `json:"hint"`
+		Kind string `json:"kind"`
+	} `json:"input"`
 }
 
 // Value reads a selector's current value as words, and Bool as a switch.
@@ -264,6 +278,8 @@ type acpUpdate struct {
 		// ConfigOptions are the session's selectors, as the agent changes
 		// them itself.
 		ConfigOptions []acpConfigOption `json:"configOptions"`
+		// AvailableCommands are the slash commands the session offers.
+		AvailableCommands []acpAvailableCommand `json:"availableCommands"`
 	} `json:"update"`
 }
 

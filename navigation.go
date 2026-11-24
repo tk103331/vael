@@ -335,7 +335,8 @@ func (a *app) snapshot() workspace.Session {
 		NoGuides: !a.guides, NoAutoClose: !a.autoClose, NoNumbers: !a.numbers,
 		Theme: a.themeID, Icons: a.iconID, FontFamily: a.fontFamily,
 		AutoSave: a.autoSave, TrimOnSave: a.trimOnSave, FinalNewline: a.finalNewline,
-		FormatOnSave: a.formatOnSave, Minimap: &a.minimap}
+		FormatOnSave: a.formatOnSave, Minimap: &a.minimap,
+		CommitShare: a.commitShare, DiffUnified: a.diffLayout == editor.DiffUnified}
 	s.Recent = append([]string(nil), a.recentFiles...)
 	if a.connection != nil {
 		s.ConnectionKind = a.connection.Kind
@@ -380,6 +381,13 @@ func (a *app) applyLayout(s workspace.Session) {
 	}
 	if s.EditorShare >= 20 && s.EditorShare <= 90 {
 		a.editorShare = s.EditorShare
+	}
+	if s.CommitShare > 0 && s.CommitShare < 100 {
+		a.commitShare = s.CommitShare
+	}
+	a.diffLayout = editor.DiffSplit
+	if s.DiffUnified {
+		a.diffLayout = editor.DiffUnified
 	}
 	if s.FontSize >= 9 && s.FontSize <= 24 {
 		a.fontSize = s.FontSize
