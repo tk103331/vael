@@ -621,6 +621,9 @@ func (a *app) agentToolbar(c *ui.Context, p palette) {
 			selector.Background(p.edge)
 		}
 		selector.Children(func() {
+			if svg := a.currentAgentSVG(); svg != nil {
+				ui.Icon(c, svg).Size(13, 13).TextColor(p.muted)
+			}
 			ui.Text(c, name).FontSize(11.5).TextColor(p.text).SingleLine().Ellipsis("…")
 			ui.Icon(c, chevronDownIcon).Size(9, 9).TextColor(p.muted)
 		})
@@ -666,6 +669,9 @@ func (a *app) agentMenu(c *ui.Context, p palette) {
 				b.Background(p.edge)
 			}
 			b.Children(func() {
+				if svg := a.agentSVG(agent); svg != nil {
+					ui.Icon(c, svg).Size(14, 14).TextColor(p.muted)
+				}
 				ui.Column(c).Grow(1).MinWidth(0).Gap(1).Children(func() {
 					ui.Text(c, agent.Name).FontSize(12).TextColor(p.text).SingleLine().Ellipsis("…")
 					ui.Text(c, agent.Command).FontSize(9.5).TextColor(p.muted).
@@ -804,8 +810,12 @@ func (a *app) agentLineView(c *ui.Context, p palette, line *agentLine, index int
 // agentSender is the mark at the top of what the agent says, before its
 // thought, tools and words. The user's words are on the other side.
 func (a *app) agentSender(c *ui.Context, p palette) {
+	mark := agentIcon
+	if svg := a.currentAgentSVG(); svg != nil {
+		mark = svg
+	}
 	ui.Row(c).FillWidth().Gap(5).AlignItems(ui.Center).Children(func() {
-		ui.Icon(c, agentIcon).Size(12, 12).TextColor(p.muted)
+		ui.Icon(c, mark).Size(13, 13).TextColor(p.muted)
 		ui.Text(c, "Agent").FontSize(10).FontWeight(650).TextColor(p.muted)
 	})
 }

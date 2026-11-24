@@ -1381,18 +1381,15 @@ func (a *app) dialogs(c *ui.Context, p palette) {
 		}
 	}
 	if a.message != "" {
-		open := true
-		ui.Modal(c, &open, func() {
-			ui.Column(c).Width(460).Padding(22).Gap(16).Children(func() {
-				ui.Text(c, "操作提示").FontSize(17).FontWeight(650)
-				ui.Text(c, a.message).FontSize(12).TextColor(p.muted)
-				if ui.Button(c, "知道了").Clicked() {
-					open = false
-				}
-			})
-		})
-		if !open {
-			a.message = ""
+		kind := a.toastKind()
+		title := "提示"
+		switch kind {
+		case "success":
+			title = "成功"
+		case "error":
+			title = "错误"
 		}
+		c.AddToast(ui.Toast{Title: title, Description: a.message, Type: kind})
+		a.message, a.messageKind = "", ""
 	}
 }

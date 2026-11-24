@@ -53,6 +53,7 @@ type acpRegistryAgent struct {
 	Website      string          `json:"website"`
 	Authors      []string        `json:"authors"`
 	License      string          `json:"license"`
+	Icon         string          `json:"icon"`
 	Distribution acpDistribution `json:"distribution"`
 }
 
@@ -626,7 +627,7 @@ func (a *app) installRegistryAgent(agent acpRegistryAgent, target acpBinaryTarge
 // addACPAgent puts an agent among the ones the editor starts, and makes it
 // the default when there is none.
 func (a *app) addACPAgent(agent acpRegistryAgent, command string, env map[string]string) {
-	entry := workspace.Agent{Name: agent.Name, Command: command, Env: env}
+	entry := workspace.Agent{Name: agent.Name, Command: command, Env: env, Icon: agent.Icon}
 	if a.agents.Has(agent.Name) {
 		return
 	}

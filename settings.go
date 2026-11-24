@@ -367,6 +367,9 @@ func (a *app) agentSettingsRow(c *ui.Context, p palette, agent workspace.Agent) 
 		b.Background(p.edge)
 	}
 	b.Children(func() {
+		if svg := a.agentSVG(agent); svg != nil {
+			ui.Icon(c, svg).Size(14, 14).TextColor(p.muted)
+		}
 		ui.Column(c).Grow(1).MinWidth(0).Gap(2).Children(func() {
 			ui.Text(c, agent.Name).FontSize(12).TextColor(p.text).SingleLine().Ellipsis("…")
 			ui.Text(c, agent.Command).FontSize(10).TextColor(p.muted).
@@ -451,6 +454,9 @@ func (a *app) registryRow(c *ui.Context, p palette, agent acpRegistryAgent) {
 		b.Background(p.edge)
 	}
 	b.Children(func() {
+		if svg := a.agentSVG(workspace.Agent{Icon: agent.Icon}); svg != nil {
+			ui.Icon(c, svg).Size(14, 14).TextColor(p.muted)
+		}
 		ui.Column(c).Grow(1).MinWidth(0).Gap(1).Children(func() {
 			ui.Row(c).FillWidth().Gap(6).AlignItems(ui.Center).Children(func() {
 				ui.Text(c, agent.Name).FontSize(12).TextColor(p.text).SingleLine().Ellipsis("…")

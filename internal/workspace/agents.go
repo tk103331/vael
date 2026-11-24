@@ -14,6 +14,8 @@ type Agent struct {
 	Name    string            `json:"name"`
 	Command string            `json:"command"`
 	Env     map[string]string `json:"env,omitempty"`
+	// Icon is the agent's icon from the ACP registry, as a URL.
+	Icon string `json:"icon,omitempty"`
 }
 
 // Agents are the ACP agents the editor may start, and the one it starts

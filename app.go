@@ -248,6 +248,9 @@ type app struct {
 	agentHistoryErr                  string
 	agentLoading                     bool
 	agentModes                       []acpMode
+	agentIcons                       map[string]*ui.SVG
+	agentIconBusy                    map[string]bool
+	messageKind                      string
 	agentModeID                      string
 	agentOptionOpen                  string
 	agentDenied                      map[string]string
@@ -273,7 +276,7 @@ type app struct {
 
 func newApp() *app {
 	ctx, cancel := context.WithCancel(context.Background())
-	return &app{projectCtx: ctx, projectCancel: cancel, backend: core.NewLocal(), lsps: map[string]*lspSession{}, pendingCaret: map[string]editor.Pos{}, sideWidth: 248, rightShare: 72, logShare: 74, rightSection: "outline", bottomTab: "terminal", editorShare: 62, splitShare: 50, stamps: map[string]workspace.Stamp{}, stale: map[string]string{}, commandUses: map[string]int{}, entries: map[string][]workspace.Entry{}, expanded: map[string]bool{}, loading: map[string]bool{}, themeID: "vael-dark", iconID: "badges", fontFamily: "monospace", minimap: true, sidebar: true, section: "files", guides: true, autoClose: true, numbers: true, selected: -1, termSelected: -1, registryStatus: map[string]string{}, registryHas: map[string]bool{}, logLocalOpen: true, logRemoteOpen: true, logRemoteClosed: map[string]bool{}, logGraphOn: true, logDetailOn: true}
+	return &app{projectCtx: ctx, projectCancel: cancel, backend: core.NewLocal(), lsps: map[string]*lspSession{}, pendingCaret: map[string]editor.Pos{}, sideWidth: 248, rightShare: 72, logShare: 74, rightSection: "outline", bottomTab: "terminal", editorShare: 62, splitShare: 50, stamps: map[string]workspace.Stamp{}, stale: map[string]string{}, commandUses: map[string]int{}, entries: map[string][]workspace.Entry{}, expanded: map[string]bool{}, loading: map[string]bool{}, themeID: "vael-dark", iconID: "badges", fontFamily: "monospace", minimap: true, sidebar: true, section: "files", guides: true, autoClose: true, numbers: true, selected: -1, termSelected: -1, registryStatus: map[string]string{}, registryHas: map[string]bool{}, agentIcons: map[string]*ui.SVG{}, agentIconBusy: map[string]bool{}, logLocalOpen: true, logRemoteOpen: true, logRemoteClosed: map[string]bool{}, logGraphOn: true, logDetailOn: true}
 }
 func (a *app) active() *fileTab {
 	if a.split && a.focusPane == 1 {
@@ -294,7 +297,25 @@ func (a *app) dirty() bool {
 func (a *app) report(err error) {
 	if err != nil {
 		a.message = err.Error()
+		a.messageKind = "error"
 	}
+}
+
+// toastKind is the kind of the notice a.message holds, for the toast
+// that shows it.
+func (a *app) toastKind() string {
+	if a.messageKind != "" {
+		return a.messageKind
+	}
+	text := a.message
+	switch {
+	case strings.HasPrefix(text, "已"), strings.Contains(text, "成功"),
+		strings.HasPrefix(text, "替换了"), strings.HasPrefix(text, "重命名 "):
+		return "success"
+	case strings.HasPrefix(text, "失败"), strings.Contains(text, "失败："):
+		return "error"
+	}
+	return "info"
 }
 func (a *app) requireProject() bool {
 	if a.root == "" {
