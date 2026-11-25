@@ -19,7 +19,7 @@
 
 ## 下载
 
-在 [Releases](https://github.com/tk103331/vael/releases) 下载对应系统的安装包（`<版本>` 如 `0.5.0`）：
+在 [Releases](https://github.com/tk103331/vael/releases) 下载对应系统的安装包（`<版本>` 如 `0.5.2`）：
 
 | 系统 | 安装包 |
 | --- | --- |
@@ -28,6 +28,14 @@
 | Linux | Debian／Ubuntu：`vael_<版本>_amd64.deb`、`vael_<版本>_arm64.deb`；Fedora／RHEL：`vael-<版本>-1.x86_64.rpm`、`vael-<版本>-1.aarch64.rpm`；也可用带 `install.sh` 的 `vael-<版本>-linux-<架构>.tar.gz` |
 
 每个包都带编辑器与无界面核心 `vael-core`（Windows 为 `vael-core.exe`），校验值见 `SHA256SUMS`。安装包目前未做代码签名：macOS 首次打开需在「隐私与安全性」里放行，Windows 可能提示 SmartScreen。
+
+## 更新
+
+Vael 使用 MyGo 的签名更新：启动时检查最新 Release 上对应平台的 `update-<平台>.json`，发现新版本后弹出提示，也可以在「命令 → 检查更新…」里查看更新说明、下载并重启。更新包经过 Ed25519 签名校验，并带增量版本，只下载变化的部分。
+
+自动更新会写入应用所在的目录，所以 **dmg 拖进「应用程序」**、**Windows 安装向导**（装在用户目录）以及 **Linux 的 `install.sh`／tar.gz**（装在 `~/.local`）可以直接在应用内更新；MSI 与 deb／rpm 装在系统目录，由部署方或包管理器负责升级。
+
+发布时 CI 用 `MYGO_UPDATER_PRIVATE_KEY` 私钥签名更新包，公钥在 `mygo.json` 的 `updates.publicKey`。
 
 ## 启动
 

@@ -1335,6 +1335,88 @@ func (a *app) dialogs(c *ui.Context, p palette) {
 			a.confirm = nil
 		}
 	}
+	if a.updater.open {
+		open := true
+		u := &a.updater
+		ui.Modal(c, &open, func() {
+			ui.Column(c).Width(520).Padding(22).Gap(14).Children(func() {
+				ui.Row(c).FillWidth().AlignItems(ui.Center).Children(func() {
+					ui.Text(c, "软件更新").FontSize(17).FontWeight(650)
+					ui.Spacer(c)
+					ui.Text(c, "当前版本 "+mygo.App.Version()).FontSize(11.5).TextColor(p.muted)
+				})
+				switch {
+				case u.disabled:
+					ui.Text(c, "这个版本不支持自动更新，请从 Releases 下载对应系统的安装包。").FontSize(13).TextColor(p.muted)
+				case u.installing:
+					ui.Text(c, "正在下载并安装 "+u.version+"…").FontSize(13)
+					ui.Progress(c, u.progress).FillWidth()
+					ui.Text(c, fmt.Sprintf("%d%%", int(u.progress*100))).FontSize(11.5).TextColor(p.muted)
+				case u.installed:
+					ui.Text(c, "新版本已安装，重启 Vael 后生效。").FontSize(13)
+				case u.checking:
+					ui.Text(c, "正在检查更新…").FontSize(13).TextColor(p.muted)
+				case u.err != "":
+					ui.Text(c, "更新失败："+u.err).FontSize(13).TextColor(p.danger)
+				case u.latest:
+					ui.Text(c, "已是最新版本。").FontSize(13).TextColor(p.muted)
+				case u.version != "":
+					ui.Text(c, "新版本 "+u.version+" 可用").FontSize(13).FontWeight(600)
+					if u.notes != "" {
+						ui.Scroll(c).FillWidth().MaxHeight(240).Children(func() {
+							a.agentMarkdown(c, p, u.notes, 12, p.text)
+						})
+					}
+				}
+				ui.Row(c).FillWidth().Gap(8).Children(func() {
+					ui.Spacer(c)
+					switch {
+					case u.installing:
+					case u.installed:
+						if ui.Button(c, "稍后").Clicked() {
+							open = false
+						}
+						if ui.PrimaryButton(c, "立即重启").Clicked() {
+							u.open, open = false, false
+							mygo.App.Relaunch()
+						}
+					case u.version != "" && u.err == "" && !u.checking:
+						if ui.Button(c, "稍后").Clicked() {
+							open = false
+						}
+						if ui.PrimaryButton(c, "下载并安装").Clicked() {
+							a.installUpdate()
+						}
+					case u.err != "":
+						if ui.Button(c, "关闭").Clicked() {
+							open = false
+						}
+						if ui.PrimaryButton(c, "重试").Clicked() {
+							a.checkUpdates(true)
+						}
+					default:
+						if ui.Button(c, "关闭").Clicked() {
+							open = false
+						}
+					}
+				})
+			})
+		})
+		if !open {
+			u.open = false
+		}
+	}
+	if a.updater.notice && !a.updater.open {
+		version := a.updater.version
+		a.updater.notice = false
+		c.AddToast(ui.Toast{
+			ID:          "update",
+			Title:       "发现新版本 " + version,
+			Description: "在「命令 → 检查更新…」里查看并安装。",
+			Action:      "查看",
+			OnAction:    func() { a.update(func() { a.updater.open = true }) },
+		})
+	}
 	if a.message != "" {
 		kind := a.toastKind()
 		title := "提示"

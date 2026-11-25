@@ -16,7 +16,7 @@ import (
 // Version is the version of the core and of the app that speaks with it.
 // It changes with the core's behavior, so that a remote one is replaced
 // when it is older.
-const Version = "0.5.1"
+const Version = "0.5.2"
 
 // Connection describes how to reach the machine the core runs on. The
 // secrets belong to SSH, WSL and Docker, not to the editor's settings.
@@ -345,11 +345,20 @@ func LocalCorePath() string {
 	if runtime.GOOS == "windows" {
 		name = "vael-core.exe"
 	}
-	candidate := filepath.Join(filepath.Dir(executable), name)
-	if _, err := os.Stat(candidate); err != nil {
-		return ""
+	dir := filepath.Dir(executable)
+	candidate := filepath.Join(dir, name)
+	if _, err := os.Stat(candidate); err == nil {
+		return candidate
 	}
-	return candidate
+	// A macOS bundle keeps the resources mygo build ships, such as the
+	// core, in Contents/Resources, one directory over from Contents/MacOS.
+	if runtime.GOOS == "darwin" {
+		candidate := filepath.Join(dir, "..", "Resources", name)
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate
+		}
+	}
+	return ""
 }
 
 // runCommand runs a command and returns what it printed.

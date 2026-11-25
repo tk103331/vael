@@ -64,6 +64,7 @@ func main() {
 			a.update(func() { a.handleDrop(e.Paths) })
 		})
 		a.menus()
+		go a.checkUpdates(false)
 		if len(os.Args) == 1 && sessionErr == nil && session.ConnectionKind != "" {
 			a.connectEnvironment(core.Connection{Kind: session.ConnectionKind, Target: session.Target, Root: session.Root, Binary: session.Binary})
 		} else {
@@ -115,6 +116,7 @@ func (a *app) menus() {
 				a.settingsOpen = true
 				a.settingsSection = settingsLSP
 			}),
+			item("检查更新…", "", a.showUpdates),
 		}},
 		{Label: "视图", Submenu: []*mygo.MenuItem{
 			item("项目全文搜索", "CmdOrCtrl+Shift+F", func() { a.sidebar = true; a.section = "search" }),

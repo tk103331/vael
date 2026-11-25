@@ -35,35 +35,28 @@ jobs:
           echo "VERSION=$version" >> "$GITHUB_ENV"
           jq --arg v "$version" '.version = $v' mygo.json > mygo.json.tmp
           mv mygo.json.tmp mygo.json
-      - name: Build Vael.app
-        env:
-          CGO_ENABLED: "0"
-        run: go tool mygo build -platform darwin/universal -skip-dmg -o build
-      - name: Build the core and put it beside the app
+      - name: Build the core into the app's resources
         env:
           CGO_ENABLED: "0"
         run: |
           set -euo pipefail
-          mkdir -p build/core
-          GOOS=darwin GOARCH=arm64 go build -trimpath -o build/core/vael-core-arm64 ./cmd/vael-core
-          GOOS=darwin GOARCH=amd64 go build -trimpath -o build/core/vael-core-amd64 ./cmd/vael-core
-          lipo -create build/core/vael-core-arm64 build/core/vael-core-amd64 -output build/core/vael-core
-          app=build/darwin-universal/Vael.app
-          cp build/core/vael-core "$app/Contents/MacOS/vael-core"
-          codesign --force --sign - "$app/Contents/MacOS/vael-core"
-          codesign --force --deep --sign - "$app"
-          codesign --verify --deep --strict "$app"
-      - name: Create the disk image
-        run: |
-          set -euo pipefail
-          mkdir -p build/dmg
-          ditto build/darwin-universal/Vael.app build/dmg/Vael.app
-          ln -s /Applications build/dmg/Applications
-          hdiutil create -quiet -volname Vael -srcfolder build/dmg -ov -format UDZO "build/vael-$VERSION.dmg"
+          for arch in arm64 amd64; do
+            mkdir -p "resources/darwin-$arch"
+            GOOS=darwin GOARCH=$arch go build -trimpath -o "resources/darwin-$arch/vael-core" ./cmd/vael-core
+          done
+      - name: Build Vael.app and the disk image
+        env:
+          CGO_ENABLED: "0"
+          MYGO_UPDATER_PRIVATE_KEY: ${{ secrets.MYGO_UPDATER_PRIVATE_KEY }}
+        run: go tool mygo build -platform darwin/universal -o build
       - uses: actions/upload-artifact@v7
         with:
           name: macos
-          path: build/*.dmg
+          path: |
+            build/darwin-universal/*.dmg
+            build/darwin-universal/update-darwin-universal.json
+            build/darwin-universal/vael-*-darwin-universal.tar.gz
+            build/darwin-universal/*.delta
           if-no-files-found: error
 
   windows:
@@ -92,6 +85,7 @@ jobs:
         shell: bash
         env:
           CGO_ENABLED: "0"
+          MYGO_UPDATER_PRIVATE_KEY: ${{ secrets.MYGO_UPDATER_PRIVATE_KEY }}
         run: |
           set -euo pipefail
           mkdir -p resources/windows-amd64
@@ -119,6 +113,9 @@ jobs:
           name: windows
           path: |
             build/windows-amd64/vael-setup-*.exe
+            build/windows-amd64/update-windows-amd64.json
+            build/windows-amd64/vael-*-windows-amd64.tar.gz
+            build/windows-amd64/*.delta
             build/vael-*.msi
           if-no-files-found: error
 
@@ -151,6 +148,7 @@ jobs:
       - name: Build the core and the packages
         env:
           CGO_ENABLED: "0"
+          MYGO_UPDATER_PRIVATE_KEY: ${{ secrets.MYGO_UPDATER_PRIVATE_KEY }}
         run: |
           set -euo pipefail
           mkdir -p "resources/linux-${{ matrix.arch }}"
@@ -163,6 +161,8 @@ jobs:
             build/linux-${{ matrix.arch }}/*.deb
             build/linux-${{ matrix.arch }}/*.rpm
             build/linux-${{ matrix.arch }}/*.tar.gz
+            build/linux-${{ matrix.arch }}/update-linux-${{ matrix.arch }}.json
+            build/linux-${{ matrix.arch }}/*.delta
           if-no-files-found: error
 
   publish:

@@ -2,8 +2,14 @@
   "name": "Vael",
   "slug": "vael",
   "identifier": "com.tk103331.vael",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "linux": {
     "comment": "A native code editor built with MyGo"
+  },
+  "updates": {
+    "publicKey": "vrHHfXKoQBlwl6BOLQ4+iDEywrLMqRvMTuo+VPtg1JQ=",
+    "github": "tk103331/vael",
+    "tagPrefix": "v",
+    "deltas": 3
   }
 }

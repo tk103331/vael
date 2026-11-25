@@ -7,4 +7,7 @@
 # built by the release workflow, beside the app or in its resources
 /resources/*/vael-core
 /resources/*/vael-core.exe
+# the private key that signs updates (mygo keygen)
+/mygo-update.key
+/mygo/update-keys/
 .DS_Store

@@ -292,6 +292,7 @@ type app struct {
 	generation                       int
 	prompt                           *namePrompt
 	confirm                          *confirmation
+	updater                          updater
 }
 
 func newApp() *app {
