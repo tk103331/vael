@@ -3,59 +3,197 @@ name: Release
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: The tag to build, such as v0.5.0
+        required: true
 
 permissions:
   contents: write
 
 jobs:
-  publish:
-    name: Build and publish the release
-    runs-on: ubuntu-latest
+  macos:
+    name: macOS (dmg)
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v7
         with:
+          ref: ${{ inputs.tag || github.ref_name }}
           fetch-depth: 0
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           cache: true
-      - name: Build the archives
+      - name: Set the version
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag='${{ inputs.tag || github.ref_name }}'
+          version="${tag#v}"
+          echo "TAG=$tag" >> "$GITHUB_ENV"
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+          jq --arg v "$version" '.version = $v' mygo.json > mygo.json.tmp
+          mv mygo.json.tmp mygo.json
+      - name: Build Vael.app
+        env:
+          CGO_ENABLED: "0"
+        run: go tool mygo build -platform darwin/universal -skip-dmg -o build
+      - name: Build the core and put it beside the app
         env:
           CGO_ENABLED: "0"
         run: |
           set -euo pipefail
-          mkdir -p build out
-          for target in darwin/amd64 darwin/arm64 linux/amd64 linux/arm64 windows/amd64; do
-            goos=${target%/*}
-            goarch=${target#*/}
-            name="vael-$goos-$goarch"
-            dir="build/$name"
-            mkdir -p "$dir"
-            ext=""
-            if [ "$goos" = "windows" ]; then
-              ext=".exe"
-            fi
-            GOOS=$goos GOARCH=$goarch go build -trimpath -o "$dir/vael$ext" .
-            GOOS=$goos GOARCH=$goarch go build -trimpath -o "$dir/vael-core$ext" ./cmd/vael-core
-            if [ "$goos" = "windows" ]; then
-              (cd build && zip -qr "../out/$name.zip" "$name")
-            else
-              chmod +x "$dir/vael" "$dir/vael-core"
-              tar -czf "out/$name.tar.gz" -C build "$name"
-            fi
-          done
-          (cd out && sha256sum ./*.tar.gz ./*.zip > SHA256SUMS)
-      - name: Publish the release
-        env:
-          GH_TOKEN: ${{ github.token }}
+          mkdir -p build/core
+          GOOS=darwin GOARCH=arm64 go build -trimpath -o build/core/vael-core-arm64 ./cmd/vael-core
+          GOOS=darwin GOARCH=amd64 go build -trimpath -o build/core/vael-core-amd64 ./cmd/vael-core
+          lipo -create build/core/vael-core-arm64 build/core/vael-core-amd64 -output build/core/vael-core
+          app=build/darwin-universal/Vael.app
+          cp build/core/vael-core "$app/Contents/MacOS/vael-core"
+          codesign --force --sign - "$app/Contents/MacOS/vael-core"
+          codesign --force --deep --sign - "$app"
+          codesign --verify --deep --strict "$app"
+      - name: Create the disk image
         run: |
           set -euo pipefail
-          tag="$GITHUB_REF_NAME"
-          if gh release view "$tag" >/dev/null 2>&1; then
-            gh release upload "$tag" out/* --clobber
+          mkdir -p build/dmg
+          ditto build/darwin-universal/Vael.app build/dmg/Vael.app
+          ln -s /Applications build/dmg/Applications
+          hdiutil create -quiet -volname Vael -srcfolder build/dmg -ov -format UDZO "build/vael-$VERSION.dmg"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: macos
+          path: build/*.dmg
+          if-no-files-found: error
+
+  windows:
+    name: Windows (msi and setup)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag || github.ref_name }}
+          fetch-depth: 0
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Set the version
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag='${{ inputs.tag || github.ref_name }}'
+          version="${tag#v}"
+          echo "TAG=$tag" >> "$GITHUB_ENV"
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+          jq --arg v "$version" '.version = $v' mygo.json > mygo.json.tmp
+          mv mygo.json.tmp mygo.json
+      - name: Build the core and the app
+        shell: bash
+        env:
+          CGO_ENABLED: "0"
+        run: |
+          set -euo pipefail
+          mkdir -p resources/windows-amd64
+          GOOS=windows GOARCH=amd64 go build -trimpath -o resources/windows-amd64/vael-core.exe ./cmd/vael-core
+          go tool mygo build -platform windows/amd64 -o build
+      - name: Build the MSI
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $wix = Join-Path ${env:ProgramFiles(x86)} "WiX Toolset v3.14\bin"
+          if (Test-Path (Join-Path $wix "candle.exe")) {
+            $env:PATH = "$wix;$env:PATH"
+          }
+          $stage = (Resolve-Path "build/windows-amd64").Path
+          $license = (Resolve-Path ".github/windows/license.rtf").Path
+          candle.exe -arch x64 `
+            "-dVersion=$env:VERSION" `
+            "-dStage=$stage" `
+            "-dLicense=$license" `
+            -out "build\vael.wixobj" `
+            ".github\windows\vael.wxs"
+          light.exe -ext WixUIExtension -out "build\vael-$env:VERSION-amd64.msi" "build\vael.wixobj"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: windows
+          path: |
+            build/windows-amd64/vael-setup-*.exe
+            build/vael-*.msi
+          if-no-files-found: error
+
+  linux:
+    name: Linux (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag || github.ref_name }}
+          fetch-depth: 0
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Set the version
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag='${{ inputs.tag || github.ref_name }}'
+          version="${tag#v}"
+          echo "TAG=$tag" >> "$GITHUB_ENV"
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+          jq --arg v "$version" '.version = $v' mygo.json > mygo.json.tmp
+          mv mygo.json.tmp mygo.json
+      - name: Build the core and the packages
+        env:
+          CGO_ENABLED: "0"
+        run: |
+          set -euo pipefail
+          mkdir -p "resources/linux-${{ matrix.arch }}"
+          GOOS=linux GOARCH=${{ matrix.arch }} go build -trimpath -o "resources/linux-${{ matrix.arch }}/vael-core" ./cmd/vael-core
+          go tool mygo build -platform "linux/${{ matrix.arch }}" -o build
+      - uses: actions/upload-artifact@v7
+        with:
+          name: linux-${{ matrix.arch }}
+          path: |
+            build/linux-${{ matrix.arch }}/*.deb
+            build/linux-${{ matrix.arch }}/*.rpm
+            build/linux-${{ matrix.arch }}/*.tar.gz
+          if-no-files-found: error
+
+  publish:
+    name: Publish the release
+    needs: [macos, windows, linux]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          merge-multiple: true
+          path: dist
+      - name: Checksums
+        run: |
+          set -euo pipefail
+          # the Windows artifact keeps the stage's folder; flatten it
+          find dist -mindepth 2 -type f -exec mv {} dist/ \;
+          find dist -mindepth 1 -type d -empty -delete
+          cd dist
+          sha256sum ./* > SHA256SUMS
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --clobber
           else
-            gh release create "$tag" out/* \
+            gh release create "$TAG" dist/* \
+              --repo "$GITHUB_REPOSITORY" \
               --verify-tag \
-              --title "Vael ${tag#v}" \
+              --title "Vael ${TAG#v}" \
               --generate-notes
           fi

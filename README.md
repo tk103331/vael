@@ -19,7 +19,15 @@
 
 ## 下载
 
-在 [Releases](https://github.com/tk103331/vael/releases) 下载对应平台的压缩包：`vael-darwin-arm64.tar.gz`、`vael-darwin-amd64.tar.gz`、`vael-linux-arm64.tar.gz`、`vael-linux-amd64.tar.gz`、`vael-windows-amd64.zip`。每个包里都有编辑器 `vael`（Windows 为 `vael.exe`）与无界面核心 `vael-core`（Windows 为 `vael-core.exe`），校验值见 `SHA256SUMS`。
+在 [Releases](https://github.com/tk103331/vael/releases) 下载对应系统的安装包（`<版本>` 如 `0.5.0`）：
+
+| 系统 | 安装包 |
+| --- | --- |
+| macOS（Apple 芯片与 Intel） | `vael-<版本>.dmg`，打开后把 Vael 拖到「应用程序」 |
+| Windows | `vael-<版本>-amd64.msi`，或安装向导 `vael-setup-<版本>-amd64.exe` |
+| Linux | Debian／Ubuntu：`vael_<版本>_amd64.deb`、`vael_<版本>_arm64.deb`；Fedora／RHEL：`vael-<版本>-1.x86_64.rpm`、`vael-<版本>-1.aarch64.rpm`；也可用带 `install.sh` 的 `vael-<版本>-linux-<架构>.tar.gz` |
+
+每个包都带编辑器与无界面核心 `vael-core`（Windows 为 `vael-core.exe`），校验值见 `SHA256SUMS`。安装包目前未做代码签名：macOS 首次打开需在「隐私与安全性」里放行，Windows 可能提示 SmartScreen。
 
 ## 启动
 

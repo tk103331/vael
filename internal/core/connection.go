@@ -16,7 +16,7 @@ import (
 // Version is the version of the core and of the app that speaks with it.
 // It changes with the core's behavior, so that a remote one is replaced
 // when it is older.
-const Version = "0.5.0"
+const Version = "0.5.1"
 
 // Connection describes how to reach the machine the core runs on. The
 // secrets belong to SSH, WSL and Docker, not to the editor's settings.

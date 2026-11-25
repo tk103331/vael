@@ -275,7 +275,7 @@ func (s *lspSession) initialize(root string) {
 	rootURI := fileURI(root)
 	s.wire.request("initialize", map[string]any{
 		"processId":  nil,
-		"clientInfo": map[string]any{"name": "Vael", "version": "0.5.0"},
+		"clientInfo": map[string]any{"name": "Vael", "version": core.Version},
 		"rootUri":    rootURI,
 		"workspaceFolders": []any{
 			map[string]any{"uri": rootURI, "name": filepath.Base(root)},

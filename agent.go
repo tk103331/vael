@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/egoist/mygo/ui"
+	"vael/internal/core"
 	"vael/internal/workspace"
 )
 
@@ -106,7 +107,7 @@ func (a *app) startAgent() {
 			"clientCapabilities": map[string]any{
 				"fs": map[string]any{"readTextFile": false, "writeTextFile": false},
 			},
-			"clientInfo": map[string]any{"name": "Vael", "version": "0.5.0"},
+			"clientInfo": map[string]any{"name": "Vael", "version": core.Version},
 		}, &init)
 		var session acpSession
 		if err == nil {

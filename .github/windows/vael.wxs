@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The Windows MSI, built with the WiX Toolset 3 that the Windows runners
+  ship, from the stage `mygo build` writes: the app, the core, and the
+  Ghostty library. The release workflow passes Version, Stage and License.
+-->
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Product Id="*"
+           Name="Vael"
+           Language="1033"
+           Version="$(var.Version)"
+           Manufacturer="Vael"
+           UpgradeCode="1F6C2C2A-5D9B-4F22-9E36-7C0B5D9A3E41">
+
+    <Package InstallerVersion="500"
+             Compressed="yes"
+             InstallScope="perMachine" />
+
+    <MajorUpgrade DowngradeErrorMessage="A newer version of Vael is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <Directory Id="ProgramFiles64Folder">
+        <Directory Id="INSTALLFOLDER" Name="Vael" />
+      </Directory>
+      <Directory Id="ProgramMenuFolder">
+        <Directory Id="AppMenuFolder" Name="Vael" />
+      </Directory>
+    </Directory>
+
+    <DirectoryRef Id="INSTALLFOLDER">
+      <Component Id="VaelExe" Guid="*">
+        <File Id="VaelExe" Source="$(var.Stage)\Vael.exe" KeyPath="yes">
+          <Shortcut Id="StartMenuShortcut"
+                    Directory="AppMenuFolder"
+                    Name="Vael"
+                    Description="Vael code editor"
+                    WorkingDirectory="INSTALLFOLDER"
+                    Advertise="yes" />
+        </File>
+        <RemoveFolder Id="RemoveAppMenuFolder" Directory="AppMenuFolder" On="uninstall" />
+        <RemoveFolder Id="RemoveInstallFolder" Directory="INSTALLFOLDER" On="uninstall" />
+      </Component>
+      <Component Id="VaelCore" Guid="*">
+        <File Id="VaelCore" Source="$(var.Stage)\vael-core.exe" KeyPath="yes" />
+      </Component>
+      <Component Id="GhosttyVT" Guid="*">
+        <File Id="GhosttyVT" Source="$(var.Stage)\ghostty-vt.dll" KeyPath="yes" />
+      </Component>
+    </DirectoryRef>
+
+    <Feature Id="Main" Title="Vael" Level="1">
+      <ComponentRef Id="VaelExe" />
+      <ComponentRef Id="VaelCore" />
+      <ComponentRef Id="GhosttyVT" />
+    </Feature>
+
+    <UI>
+      <UIRef Id="WixUI_InstallDir" />
+    </UI>
+    <Property Id="WIXUI_INSTALLDIR" Value="INSTALLFOLDER" />
+    <WixVariable Id="WixUILicenseRtf" Value="$(var.License)" />
+  </Product>
+</Wix>

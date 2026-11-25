@@ -2,5 +2,9 @@
 /vael-core
 /vael-core.exe
 /dist/
+/build/
 /.mygo/
+# built by the release workflow, beside the app or in its resources
+/resources/*/vael-core
+/resources/*/vael-core.exe
 .DS_Store
