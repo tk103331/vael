@@ -17,6 +17,10 @@
 
 ![对话与文件共用标签栏](screenshot/vael-conversation.png)
 
+## 下载
+
+在 [Releases](https://github.com/tk103331/vael/releases) 下载对应平台的压缩包：`vael-darwin-arm64.tar.gz`、`vael-darwin-amd64.tar.gz`、`vael-linux-arm64.tar.gz`、`vael-linux-amd64.tar.gz`、`vael-windows-amd64.zip`。每个包里都有编辑器 `vael`（Windows 为 `vael.exe`）与无界面核心 `vael-core`（Windows 为 `vael-core.exe`），校验值见 `SHA256SUMS`。
+
 ## 启动
 
 需要 Go 1.27+、Git 与 MyGo 支持的桌面环境（Go 会自动下载项目声明的工具链）。
