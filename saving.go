@@ -60,6 +60,9 @@ func (a *app) saveTab(tab *fileTab) {
 	if tab == nil || tab.state == nil || tab.saving {
 		return
 	}
+	// Saving is working on the file for good, so the tab stops being a
+	// preview.
+	tab.preview = false
 	a.prepareSave(tab)
 	if a.formatOnSave && a.formatDocument(tab, func() { a.writeFile(tab) }) {
 		return

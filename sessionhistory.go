@@ -66,11 +66,26 @@ func (a *app) agentHistoryMenu(c *ui.Context, p palette) {
 			ui.Text(c, "这个项目里还没有历史会话。").FontSize(10).TextColor(p.muted).Padding(4, 4)
 		default:
 			now := time.Now()
+			var pinned []acpSessionInfo
+			for _, session := range a.agentSessions {
+				if a.chatMetaOf(session.SessionID).Pinned {
+					pinned = append(pinned, session)
+				}
+			}
 			ui.Scroll(c).FillWidth().MaxHeight(340).Children(func() {
 				ui.Column(c).FillWidth().Gap(1).Children(func() {
+					if len(pinned) > 0 {
+						a.agentHistoryHeader(c, p, "置顶", len(pinned))
+						for _, session := range pinned {
+							a.agentHistoryRow(c, p, session)
+						}
+					}
 					for _, period := range chatPeriods {
 						var group []acpSessionInfo
 						for _, session := range a.agentSessions {
+							if a.chatMetaOf(session.SessionID).Pinned {
+								continue
+							}
 							if chatPeriod(session.UpdatedAt, now) == period {
 								group = append(group, session)
 							}
@@ -78,36 +93,9 @@ func (a *app) agentHistoryMenu(c *ui.Context, p palette) {
 						if len(group) == 0 {
 							continue
 						}
-						ui.Row(c).FillWidth().Height(20).Padding(2, 6, 0, 6).
-							AlignItems(ui.Center).Gap(4).Children(func() {
-							ui.Text(c, period).FontSize(9.5).FontWeight(650).TextColor(p.muted).Grow(1)
-							ui.Textf(c, "%d", len(group)).FontSize(9).TextColor(p.muted).FontFeatures("tnum")
-						})
+						a.agentHistoryHeader(c, p, period, len(group))
 						for _, session := range group {
-							session := session
-							title := session.Title
-							if strings.TrimSpace(title) == "" {
-								title = shortSessionID(session.SessionID)
-							}
-							b := ui.ButtonBase(c).FillWidth().Height(38).Padding(0, 8).Gap(6).
-								Radius(5).AlignItems(ui.Center).Label("打开 " + title)
-							if b.Hovered() {
-								b.Background(p.edge)
-							}
-							b.Children(func() {
-								ui.Column(c).Grow(1).MinWidth(0).Gap(1).Children(func() {
-									ui.Text(c, title).FontSize(11).TextColor(p.text).SingleLine().Ellipsis("…")
-									ui.Text(c, shortSessionID(session.SessionID)+" · "+sessionWhen(session.UpdatedAt)).
-										FontSize(9).TextColor(p.muted).SingleLine().Ellipsis("…")
-								})
-								if session.SessionID == a.agentSession {
-									ui.Icon(c, checkIcon).Size(11, 11).TextColor(p.accent)
-								}
-							})
-							if b.Clicked() {
-								a.agentHistoryOpen = false
-								a.openHistorySession(session)
-							}
+							a.agentHistoryRow(c, p, session)
 						}
 					}
 				})
@@ -118,6 +106,66 @@ func (a *app) agentHistoryMenu(c *ui.Context, p palette) {
 				TextColor(p.muted).Padding(4, 2)
 		}
 	})
+}
+
+// agentHistoryHeader is one group of the history list.
+func (a *app) agentHistoryHeader(c *ui.Context, p palette, label string, count int) {
+	ui.Row(c).FillWidth().Height(20).Padding(2, 6, 0, 6).
+		AlignItems(ui.Center).Gap(4).Children(func() {
+		ui.Text(c, label).FontSize(9.5).FontWeight(650).TextColor(p.muted).Grow(1)
+		ui.Textf(c, "%d", count).FontSize(9).TextColor(p.muted).FontFeatures("tnum")
+	})
+}
+
+// agentHistoryRow is one session of the history: its name, when it was
+// written, whether it is open and pinned, and what a right click offers.
+func (a *app) agentHistoryRow(c *ui.Context, p palette, session acpSessionInfo) {
+	title := a.chatTitleOfSession(session)
+	meta := a.chatMetaOf(session.SessionID)
+	b := ui.ButtonBase(c).FillWidth().Height(38).Padding(0, 8).Gap(6).
+		Radius(5).AlignItems(ui.Center).Label("打开 " + title)
+	if b.Hovered() {
+		b.Background(p.edge)
+	}
+	b.Children(func() {
+		ui.Column(c).Grow(1).MinWidth(0).Gap(1).Children(func() {
+			ui.Text(c, title).FontSize(11).TextColor(p.text).SingleLine().Ellipsis("…")
+			ui.Text(c, shortSessionID(session.SessionID)+" · "+sessionWhen(session.UpdatedAt)).
+				FontSize(9).TextColor(p.muted).SingleLine().Ellipsis("…")
+		})
+		if meta.Pinned {
+			ui.Icon(c, pinIcon).Size(10, 10).TextColor(p.warn)
+		}
+		if session.SessionID == a.agentSession {
+			ui.Icon(c, checkIcon).Size(11, 11).TextColor(p.accent)
+		}
+	})
+	b.ContextMenu(func(m *ui.Menu) {
+		if m.Item("打开对话").Chosen() {
+			a.agentHistoryOpen = false
+			a.openHistorySession(session)
+		}
+		label := "置顶对话"
+		if meta.Pinned {
+			label = "取消置顶"
+		}
+		if m.Item(label).Chosen() {
+			a.toggleChatPin(session.SessionID)
+		}
+		if m.Item("重命名…").Chosen() {
+			a.chatRename = &chatRenamePrompt{session: session.SessionID, value: title}
+		}
+		if a.agentCanFork {
+			if m.Item("分叉对话…").Chosen() {
+				a.agentHistoryOpen = false
+				a.forkAgentSession(session.SessionID)
+			}
+		}
+	})
+	if b.Clicked() {
+		a.agentHistoryOpen = false
+		a.openHistorySession(session)
+	}
 }
 
 // loadAgentSessions asks the agent for the sessions of this project.

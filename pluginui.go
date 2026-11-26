@@ -120,6 +120,18 @@ func pluginIcon(name string) *ui.SVG {
 		return fileIcon
 	case "folder":
 		return folderIcon
+	case "code":
+		return codeIcon
+	case "data":
+		return dataIcon
+	case "doc":
+		return docIcon
+	case "style":
+		return styleIcon
+	case "markup":
+		return markupIcon
+	case "image":
+		return imageIcon
 	case "git":
 		return gitIcon
 	case "commit":
@@ -189,12 +201,12 @@ func (a *app) pluginNode(c *ui.Context, p palette, node pluginNode) {
 		label := node.Text
 		if node.Primary {
 			if ui.PrimaryButton(c, label).Clicked() {
-				a.runPluginCommand(node.Command)
+				a.pluginViewCommand(node.Command)
 			}
 			return
 		}
 		if quiet(c, label, false, p) {
-			a.runPluginCommand(node.Command)
+			a.pluginViewCommand(node.Command)
 		}
 	case "buttons":
 		ui.Row(c).FillWidth().Wrap().Gap(6).Children(func() {
@@ -280,10 +292,10 @@ func (a *app) pluginListItem(c *ui.Context, p palette, item pluginItem) {
 	})
 }
 
-// runPluginCommand runs what a button of a plugin asks for. In a plugin
-// that really runs, this calls the plugin back through the ABI; here it
-// shows that the editor took it.
-func (a *app) runPluginCommand(command string) {
+// runPluginDemoCommand runs what a button of a plugin asks for. In a
+// plugin that really runs, this calls the plugin back through the ABI;
+// here it shows that the editor took it.
+func (a *app) runPluginDemoCommand(command string) {
 	if command == "" {
 		return
 	}
@@ -325,6 +337,9 @@ func (a *app) pluginDemoPanel(c *ui.Context, p palette) {
 		ui.Text(c, err.Error()).FontSize(11).TextColor(p.danger)
 		return
 	}
+	// The buttons of the example ask the example, not a real plugin.
+	a.pluginPanelDemo = true
+	defer func() { a.pluginPanelDemo = false }()
 	ui.Column(c).FillWidth().Padding(10).Children(func() {
 		a.pluginView(c, p, nodes)
 	})

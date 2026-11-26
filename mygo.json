@@ -2,7 +2,7 @@
   "name": "Vael",
   "slug": "vael",
   "identifier": "com.tk103331.vael",
-  "version": "0.5.2",
+  "version": "0.6.0",
   "linux": {
     "comment": "A native code editor built with MyGo"
   },

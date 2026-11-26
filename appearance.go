@@ -141,6 +141,12 @@ func (a *app) closeAllTabs() {
 // others, or all of them, shows the file in the tree, and copies its path.
 func tabMenu(c *ui.Context, a *app, tab *fileTab, index int, row ui.Element) {
 	row.ContextMenu(func(m *ui.Menu) {
+		if tab.preview {
+			if m.Item("固定标签页").Chosen() {
+				tab.preview = false
+			}
+			m.Separator()
+		}
 		if m.Item("关闭").Chosen() {
 			a.closeTab(index)
 		}

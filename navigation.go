@@ -333,9 +333,10 @@ func (a *app) snapshot() workspace.Session {
 	s := workspace.Session{Root: a.root, SideWidth: a.sideWidth, EditorShare: a.editorShare, Sidebar: a.sidebar, Terminal: a.showBottom, RightPanel: a.rightPanel, Dark: a.dark, Wrap: a.wrap, Section: a.section, FontSize: a.fontSize,
 		TabSize: a.tabSize, Indent: a.indent, Whitespace: a.whitespace, LineHeight: a.lineHeight,
 		NoGuides: !a.guides, NoAutoClose: !a.autoClose, NoNumbers: !a.numbers,
-		Theme: a.themeID, Icons: a.iconID, FontFamily: a.fontFamily,
+		Theme: a.themeID, Icons: a.iconID, FontFamily: a.fontFamily, ActivitySize: float32(a.activitySize),
 		AutoSave: a.autoSave, TrimOnSave: a.trimOnSave, FinalNewline: a.finalNewline,
 		FormatOnSave: a.formatOnSave, Minimap: &a.minimap,
+		NoNotify:    !a.notifyAgent,
 		CommitShare: a.commitShare, DiffUnified: a.diffLayout == editor.DiffUnified}
 	s.Recent = append([]string(nil), a.recentFiles...)
 	if a.connection != nil {
@@ -359,7 +360,7 @@ func (a *app) applyLayout(s workspace.Session) {
 	// A session of before themes has only whether it was dark.
 	a.themeID = s.Theme
 	if s.Theme == "" {
-		a.themeID = themeOfDark("vael-dark", s.Dark)
+		a.themeID = a.themeOfDark("vael-dark", s.Dark)
 	}
 	a.setTheme(a.themeID)
 	if s.Icons != "" {
@@ -368,6 +369,9 @@ func (a *app) applyLayout(s workspace.Session) {
 	if s.FontFamily != "" {
 		a.fontFamily = s.FontFamily
 	}
+	if s.ActivitySize >= 24 && s.ActivitySize <= 36 {
+		a.activitySize = int(s.ActivitySize)
+	}
 	if s.Minimap != nil {
 		a.minimap = *s.Minimap
 	}
@@ -375,6 +379,7 @@ func (a *app) applyLayout(s workspace.Session) {
 		a.autoSave = s.AutoSave
 	}
 	a.trimOnSave, a.finalNewline, a.formatOnSave = s.TrimOnSave, s.FinalNewline, s.FormatOnSave
+	a.notifyAgent = !s.NoNotify
 	a.recentFiles = append([]string(nil), s.Recent...)
 	if s.SideWidth >= 160 && s.SideWidth <= 640 {
 		a.sideWidth = s.SideWidth

@@ -1370,6 +1370,9 @@ func (a *app) lspProblems() int {
 // lspSettingsView is the panel of the language servers: those Vael knows,
 // which of them starts, and the command it starts with.
 func (a *app) lspSettingsView(c *ui.Context, p palette) {
+	if !a.settingsCustomAllowed(settingsLSP) {
+		return
+	}
 	if a.lspOn == nil {
 		a.bindLSPSettings()
 	}

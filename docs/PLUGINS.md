@@ -4,6 +4,32 @@ Vael 要能扩展：加命令、改文本、读项目、连语言服务器。这
 
 原型在 [`experiments/plugins`](../experiments/plugins)：同一份「统计字数」插件分别用 Rust→wasm 与 JavaScript 实现，两种宿主都用同一份请求/响应 ABI 调用，测试断言两者答案一致、都能被中断，并测了加载与调用的开销。
 
+## 已经落地的部分（M1）
+
+M1 已在编辑器里跑起来了，代码在 [`plugin.go`](../plugin.go) 与 [`internal/workspace/plugins.go`](../internal/workspace/plugins.go)：
+
+- **插件目录**：`~/.config/vael/plugins/<名字>/plugin.json` + 插件代码；清单声明 `api`（当前 1）、`runtime`（当前 `js`）、`main`、`capabilities` 与 `contributes.commands`。版本、运行时、命令不全的清单一律不加载，错误显示在设置里。
+- **运行时**：JavaScript 用 [moejs](https://github.com/MoeForge/moejs)（纯 Go、可中断、带内存限额）；每次调用限时 2 秒、限内存 64 MiB，超时的插件被中断，编辑器不会被卡住。
+- **宿主 API**（按能力授权，没声明的能力调用即报错）：
+  | API | 能力 | 做什么 |
+  | --- | --- | --- |
+  | `vael.notify(text)` | `notify` | 以提示条说一句 |
+  | `vael.replace(text)` | `editor` | 把选区换成这段文字（进撤销栈） |
+  | `vael.storage.get(key)` / `vael.storage.set(key, value)` | `storage` | 每个插件自己的键值存储（`plugin-storage.json`） |
+- **调用约定**：编辑器给插件 `{command, text, content, path, selection}`，插件回 `{notify, replace, error, view}`；`text` 是选区，没有选区时是整个文件。
+- **面板**：插件在答案里可以带一棵**声明式视图树**（`view`），编辑器用 [`pluginui.go`](../pluginui.go) 的那套部件画成右侧面板——插件只说结构与语义，字号、颜色、间距、图标都由宿主定；树里的按钮回到同一个 ABI（`command`），于是面板能自己刷新。
+- **命令**：清单里的命令进命令面板，标题前缀「插件：」；插件自己画界面的声明式视图树仍是原型（见下文）。
+- **启停**：设置里的「插件」一栏可以启用／停用、看版本、能力与错误，也能打开插件目录；状态记在 `plugins.json`。
+- **两个运行时**：清单里 `runtime` 写 `js`（默认，moejs）或 `wasm`（wazero）。两者是**同一套 ABI**：编辑器写一份 JSON 请求，插件回一份 JSON 答案，答案里说编辑器该做什么（说话、替换文本、给面板）。
+  - **JavaScript 插件**：`export function run(request)`，宿主把 `vael.notify`／`vael.replace`／`vael.storage` 装成全局函数，插件可以在计算时说话。
+  - **wasm 插件**：模块导出 `vael_alloc(size)`（给宿主一块地方写请求）、`vael_run(ptr, size)`（跑命令，答案的高 32 位是位置、低 32 位是长度）与 `memory`；宿主把 JSON 写进它的内存，读回它的答案。wasm 插件没有宿主函数，能力通过答案里的动作体现。沙箱限内存 64 MiB，超时（默认 2 秒）即关闭沙箱，死循环的插件也停得下。Rust 的例子见 [`experiments/plugins/plugin`](../experiments/plugins/plugin)。
+- **主题与图标主题也是插件**：像 Zed 的扩展一样，主题只是数据，不需要运行代码。清单里写 `contributes.themes`（`id`／`name`／`family`／`dark`／`colors`，颜色用 `#rrggbb`，键是 `wash`、`card`、`text`、`muted`、`edge`、`accent`、`selected`、`warn`、`success`、`danger`）和 `contributes.iconThemes`（`id`／`name`／`marks`，mark 按扩展名给 `text` 或 `icon` 名，加 `tone`：`muted`／`accent`／`success`／`warn`／`danger`）。同一个 `family` 的深浅主题会被 `⌘/Ctrl+Shift+L` 一起切换；主题随会话保留。示例见 [`examples/plugins/midnight`](../examples/plugins/midnight)。
+- **示例**：[`examples/plugins/wordcount`](../examples/plugins/wordcount)，复制到插件目录即可用。
+- **安装与卸载**（M4 的一部分）：插件包是 zip 或 tar.gz，里面有 `plugin.json` 与插件的文件；可以从文件或网址安装（网址可带 SHA-256 校验），安装时先解到临时目录、读清单、核对接口版本与运行时，再放进插件目录；写到包外的路径一律拒绝；同名插件会被替换，插件可以在设置里卸载。
+- **插件商店**（M4 的另一部分）：设置里填一个索引地址（JSON，`{"plugins":[{"id","name","version","description","url","sha256"}]}`，也接受直接是数组），编辑器读入并缓存 6 小时（`plugin-store.json`），列出插件；装过的显示版本，索引里更新就给出「更新到 x.y.z」。包按索引里的 SHA-256 校验。**还没有**的是官方公共索引的托管、自动更新与依赖解析。
+
+与原计划的不同：M1 先只做 JavaScript 运行时（wasm 留到 M3），插件的自注册命令（`activate(api)`）改为清单里的 `contributes.commands`，权限确认弹窗与插件市场留到 M4。
+
 ## 目标与约束
 
 - UI 是 Go（MyGo 原生），插件**不自己画界面**：插件只能贡献命令、文本变换、面板内容的数据、状态栏文字等，由 Vael 负责渲染。
@@ -184,10 +210,10 @@ Vael 要能扩展：加命令、改文本、读项目、连语言服务器。这
 
 | 里程碑 | 内容 |
 | --- | --- |
-| M1 | moejs 宿主落地：声明式视图树（与 `pluginui.go` 原型同一套节点）`~/.config/vael/plugins/<name>/plugin.json` + `plugin.js`，命令注册进命令面板，`editor.text/selection/replace` 与 `notify`；超时与内存限额；设置里的插件列表（启用/禁用/打开目录） |
+| M1 | moejs 宿主落地：声明式视图树（与 `pluginui.go` 原型同一套节点）`~/.config/vael/plugins/<name>/plugin.json` + `plugin.js`，命令注册进命令面板，`editor.text/selection/replace` 与 `notify`；超时与内存限额；设置里的插件列表（启用/禁用/打开目录）——**已完成**，见上 |
 | M2 | 事件与贡献点：保存前/保存后、打开文件、命令面板、状态栏项；`storage`；插件错误在面板里显示堆栈 |
-| M3 | wasm 运行时（wazero + 同一 Host）：清单 `runtime: "wasm"`，Extism 兼容的 PDK 让 Rust/Zig 插件少写胶水 |
-| M4 | 权限模型与生态：能力确认弹窗、目录白名单、插件市场（从 Git 仓库/单体 `.zip` 安装、校验和、版本升级） |
+| M3 | wasm 运行时（wazero + 同一 Host）：清单 `runtime: "wasm"`，Extism 兼容的 PDK 让 Rust/Zig 插件少写胶水——**运行时已完成**（`vael_alloc`／`vael_run`／`memory` 这套 ABI），PDK 与宿主函数还没做 |
+| M4 | 权限模型与生态：能力确认弹窗、目录白名单、插件市场（从 Git 仓库/单体 `.zip` 安装、校验和、版本升级）——**索引、校验和、安装、版本升级已完成**；能力确认弹窗与公共索引托管还没做 |
 
 ## 风险与取舍
 

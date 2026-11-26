@@ -48,6 +48,10 @@ func (a *app) commands() []command {
 		{title: "视图：语言服务器设置", hint: "启用服务器、改启动命令", run: func() { a.settingsOpen = true; a.settingsSection = settingsLSP }},
 		{title: "视图：Agent", hint: "与 Agent 对话", run: func() { a.rightSection = "agent"; a.rightPanel = true }},
 		{title: "视图：插件面板（原型）", hint: "插件用声明式视图树画的界面", run: func() { a.rightSection = "plugin-demo"; a.rightPanel = true }},
+		{title: "视图：插件面板", hint: "插件给出的面板", run: func() { a.rightSection = "plugin"; a.rightPanel = true }},
+		{title: "插件：安装插件包…", hint: "从文件或网址装一个插件", run: a.choosePluginPackage},
+		{title: "插件：从网址安装…", hint: "下载 zip 或 tar.gz 的插件包", run: func() { a.pluginURL = &pluginURLPrompt{} }},
+		{title: "插件：插件商店…", hint: "从索引里找插件、安装与更新", run: func() { a.settingsOpen = true; a.settingsSection = settingsPlugin }},
 		{title: "任务：运行命令…", hint: "在项目目录中运行命令", run: func() { a.sidebar = true; a.section = "tasks" }},
 		{title: "视图：切换侧栏", hint: "显示或隐藏文件树", run: func() { a.sidebar = !a.sidebar }},
 		{title: "视图：切换终端", hint: "显示或隐藏终端面板", run: func() {
@@ -79,7 +83,8 @@ func (a *app) commands() []command {
 			}
 		}})
 	}
-	return list
+	// The commands the plugins bring, as the editor's own.
+	return append(list, a.pluginCommands()...)
 }
 
 // matchCommands keeps the commands whose title or hint holds the query, the

@@ -1,0 +1,61 @@
+{
+  "name": "midnight",
+  "version": "0.1.0",
+  "description": "午夜配色与一套文件图标：深浅两种主题。",
+  "api": 1,
+  "runtime": "js",
+  "contributes": {
+    "themes": [
+      {
+        "id": "midnight-dark",
+        "name": "午夜 深色",
+        "family": "midnight",
+        "dark": true,
+        "colors": {
+          "wash": "#0b1020",
+          "card": "#111a2e",
+          "text": "#e6ecff",
+          "muted": "#8a97b8",
+          "edge": "#243053",
+          "accent": "#5b8cff",
+          "selected": "#1c2a4a",
+          "warn": "#ffb454",
+          "success": "#5ad18a",
+          "danger": "#ff6b6b"
+        }
+      },
+      {
+        "id": "midnight-light",
+        "name": "午夜 浅色",
+        "family": "midnight",
+        "dark": false,
+        "colors": {
+          "wash": "#e8edff",
+          "card": "#ffffff",
+          "text": "#162039",
+          "muted": "#5d6a8c",
+          "edge": "#c9d2ee",
+          "accent": "#2b5bd2",
+          "selected": "#dbe5ff",
+          "warn": "#9a6700",
+          "success": "#1a7f37",
+          "danger": "#cf222e"
+        }
+      }
+    ],
+    "iconThemes": [
+      {
+        "id": "midnight-icons",
+        "name": "午夜图标",
+        "marks": {
+          ".go": { "icon": "code", "tone": "accent" },
+          ".ts": { "icon": "code", "tone": "accent" },
+          ".js": { "icon": "code", "tone": "accent" },
+          ".json": { "icon": "data", "tone": "success" },
+          ".md": { "text": "MD", "tone": "warn" },
+          ".png": { "icon": "image", "tone": "accent" }
+        }
+      }
+    ]
+  }
+}

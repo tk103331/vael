@@ -26,6 +26,10 @@ type fileTab struct {
 	diff           *editor.DiffState
 	commitDiff     *commitDiff
 	saving         bool
+	// preview says the tab is the one a single click opened: the next
+	// preview takes its place until the file is edited or opened for
+	// good.
+	preview bool
 	// The indentation of the text, cached for the buffer version it was
 	// read from.
 	indentTabs    bool
@@ -56,6 +60,14 @@ type namePrompt struct {
 type confirmation struct {
 	title, message string
 	action         func()
+}
+type chatRenamePrompt struct {
+	tab     *chatTab
+	session string
+	value   string
+}
+type pluginURLPrompt struct {
+	url, sum string
 }
 type app struct {
 	closed                           atomic.Bool
@@ -192,6 +204,24 @@ type app struct {
 	logBranchHidden                  bool
 	agents                           workspace.Agents
 	agentsPath                       string
+	chats                            workspace.Chats
+	chatsPath                        string
+	plugins                          []*plugin
+	pluginsDir                       string
+	pluginThemes                     []uiTheme
+	pluginIconThemes                 []workspace.PluginIconTheme
+	pluginViews                      map[string][]pluginNode
+	pluginPanelPlugin                string
+	pluginPanelDemo                  bool
+	pluginStates                     workspace.PluginStates
+	pluginStatesPath                 string
+	pluginStorage                    workspace.PluginStorage
+	pluginStoragePath                string
+	pluginErr                        string
+	pluginStore                      workspace.PluginStore
+	pluginStorePath                  string
+	pluginStoreLoading               bool
+	pluginStoreErr                   string
 	agentChosen                      string
 	agentMenuOpen                    bool
 	agentConn                        *acpConn
@@ -210,6 +240,7 @@ type app struct {
 	themeID                          string
 	iconID                           string
 	fontFamily                       string
+	activitySize                     int
 	fontMenuOpen                     bool
 	fontQuery                        string
 	fontFamilies                     []ui.FontFamily
@@ -219,6 +250,7 @@ type app struct {
 	formatOnSave                     bool
 	lastActive                       string
 	lastActiveTab                    *fileTab
+	previewTarget                    string
 	symbolPrompt                     *symbolRename
 	actions                          *actionList
 	refs                             *referenceList
@@ -239,12 +271,17 @@ type app struct {
 	lspMenuOpen                      bool
 	lspCmd                           map[string]*string
 	settingsSection                  string
+	settingsQuery                    string
+	settingsShown                    int
 	agentAddOpen                     bool
 	agentAddName, agentAddCommand    string
 	agentRegistryOpen                bool
 	agentConfig                      []acpConfigOption
 	agentCanLoad                     bool
 	agentCanList                     bool
+	agentCanFork                     bool
+	forkPending                      string
+	forkUpdates                      []acpUpdate
 	agentSessions                    []acpSessionInfo
 	agentSessionsLoaded              bool
 	agentHistoryOpen                 bool
@@ -266,6 +303,12 @@ type app struct {
 	chatListQuery                    string
 	agentCommands                    []acpAvailableCommand
 	agentRefs                        []agentRef
+	agentQueue                       []agentQueued
+	agentUsed, agentSize             int64
+	agentCost                        float64
+	agentCostCurrency                string
+	agentUsageWarned                 bool
+	notifyAgent                      bool
 	agentCommand                     string
 	agentMentionOpen                 bool
 	agentMentionQuery                string
@@ -291,13 +334,15 @@ type app struct {
 	refreshing, gitBusy              bool
 	generation                       int
 	prompt                           *namePrompt
+	chatRename                       *chatRenamePrompt
+	pluginURL                        *pluginURLPrompt
 	confirm                          *confirmation
 	updater                          updater
 }
 
 func newApp() *app {
 	ctx, cancel := context.WithCancel(context.Background())
-	return &app{projectCtx: ctx, projectCancel: cancel, backend: core.NewLocal(), lsps: map[string]*lspSession{}, pendingCaret: map[string]editor.Pos{}, sideWidth: 248, rightShare: 72, logShare: 74, rightSection: "outline", bottomTab: "terminal", editorShare: 62, splitShare: 50, stamps: map[string]workspace.Stamp{}, stale: map[string]string{}, commandUses: map[string]int{}, entries: map[string][]workspace.Entry{}, expanded: map[string]bool{}, loading: map[string]bool{}, themeID: "vael-dark", iconID: "badges", fontFamily: "monospace", minimap: true, sidebar: true, section: "files", guides: true, autoClose: true, numbers: true, selected: -1, termSelected: -1, registryStatus: map[string]string{}, registryHas: map[string]bool{}, agentIcons: map[string]*ui.SVG{}, agentIconBusy: map[string]bool{}, agentCaretPending: -1, logLocalOpen: true, logRemoteOpen: true, logRemoteClosed: map[string]bool{}, logGraphOn: true, logDetailOn: true}
+	return &app{projectCtx: ctx, projectCancel: cancel, backend: core.NewLocal(), chats: workspace.Chats{}, notifyAgent: true, pluginStates: workspace.PluginStates{}, pluginStorage: workspace.PluginStorage{}, activitySize: 28, lsps: map[string]*lspSession{}, pendingCaret: map[string]editor.Pos{}, sideWidth: 248, rightShare: 72, logShare: 74, rightSection: "outline", bottomTab: "terminal", editorShare: 62, splitShare: 50, stamps: map[string]workspace.Stamp{}, stale: map[string]string{}, commandUses: map[string]int{}, entries: map[string][]workspace.Entry{}, expanded: map[string]bool{}, loading: map[string]bool{}, themeID: "vael-dark", iconID: "badges", fontFamily: "monospace", minimap: true, sidebar: true, section: "files", guides: true, autoClose: true, numbers: true, selected: -1, termSelected: -1, registryStatus: map[string]string{}, registryHas: map[string]bool{}, agentIcons: map[string]*ui.SVG{}, agentIconBusy: map[string]bool{}, agentCaretPending: -1, logLocalOpen: true, logRemoteOpen: true, logRemoteClosed: map[string]bool{}, logGraphOn: true, logDetailOn: true}
 }
 func (a *app) active() *fileTab {
 	if a.split && a.focusPane == 1 {
@@ -496,9 +541,25 @@ func (a *app) noteRecent(path string) {
 func (a *app) openFile(path string) {
 	a.openFileAt(path, -1, -1)
 }
+
+// openPreview opens a file as a preview, the way a single click in the
+// tree does: the next preview takes its place, until the file is changed
+// or opened for good.
+func (a *app) openPreview(path string) {
+	a.previewTarget = path
+	a.openFileMode(path, -1, -1, true)
+}
+
 func (a *app) openFileAt(path string, start, end int) {
+	a.openFileMode(path, start, end, false)
+}
+
+func (a *app) openFileMode(path string, start, end int, preview bool) {
 	for i, f := range a.tabs {
 		if f.path == path && f.diff == nil {
+			if !preview {
+				f.preview = false
+			}
 			a.focusTab(i)
 			a.noteRecent(path)
 			if start >= 0 {
@@ -521,6 +582,11 @@ func (a *app) openFileAt(path string, start, end int) {
 			if generation != a.generation {
 				return
 			}
+			if preview && a.previewTarget != path {
+				// Another preview was asked for after this one: this read
+				// is stale, and would take its place.
+				return
+			}
 			a.report(err)
 			if err != nil {
 				return
@@ -540,7 +606,8 @@ func (a *app) openFileAt(path string, start, end int) {
 			b := editor.NewBuffer(text)
 			b.SetLanguage(editor.LanguageFor(path))
 			font := a.editorFont()
-			tab := &fileTab{path: path, original: text, state: &editor.State{Buffer: b, KeepScrollbars: true, Font: font}}
+			tab := &fileTab{path: path, original: text, preview: preview,
+				state: &editor.State{Buffer: b, KeepScrollbars: true, Font: font}}
 			tab.state.OnDefinition = func(offset int) { a.defineAt(tab, offset) }
 			tab.state.ContextMenu = func(m *ui.Menu) {
 				if m.Item("复制路径").Chosen() {
@@ -560,8 +627,29 @@ func (a *app) openFileAt(path string, start, end int) {
 					a.addSelectionToAgent(tab)
 				}
 			}
-			a.tabs = append(a.tabs, tab)
-			a.focusTab(len(a.tabs) - 1)
+			// A preview takes the place of the preview before it, when
+			// that one is still a preview of an unedited file.
+			if preview {
+				if i := a.previewIndex(); i >= 0 {
+					old := a.tabs[i]
+					a.lspDidClose(old)
+					delete(a.stamps, old.path)
+					if a.lastActiveTab == old {
+						a.lastActiveTab = tab
+					}
+					a.tabs[i] = tab
+					if a.split && a.splitPath == old.path {
+						a.splitPath = path
+					}
+					a.focusTab(i)
+				} else {
+					a.tabs = append(a.tabs, tab)
+					a.focusTab(len(a.tabs) - 1)
+				}
+			} else {
+				a.tabs = append(a.tabs, tab)
+				a.focusTab(len(a.tabs) - 1)
+			}
 			a.noteRecent(path)
 			a.stamps[path] = stamp
 			a.watchVersion++
@@ -575,6 +663,43 @@ func (a *app) openFileAt(path string, start, end int) {
 			a.takeSymbol(path, tab)
 		})
 	}()
+}
+
+// previewIndex is the tab another preview replaces, in the pane that has
+// the keyboard: the one that is a preview still, and holds no change of
+// the user's. A preview that was edited is pinned where it is, so that
+// its text is not lost.
+func (a *app) previewIndex() int {
+	right := a.split && a.focusPane == 1
+	for i, f := range a.tabs {
+		if !f.preview || f.state == nil || f.diff != nil || f.commitDiff != nil {
+			continue
+		}
+		if a.split && right && f.path != a.splitPath {
+			continue
+		}
+		if a.split && !right && f.path == a.splitPath && i != a.selected {
+			// The right pane shows it, and the left does not: it is not
+			// the preview the left pane replaces.
+			continue
+		}
+		if f.state.Buffer.Modified() {
+			f.preview = false
+			continue
+		}
+		return i
+	}
+	return -1
+}
+
+// pinPreviews turns the previews whose text the user changed into tabs of
+// their own, as an edit of a preview does in an IDE.
+func (a *app) pinPreviews() {
+	for _, f := range a.tabs {
+		if f.preview && f.state != nil && f.state.Buffer.Modified() {
+			f.preview = false
+		}
+	}
 }
 func (a *app) save() {
 	if !a.requireProject() {

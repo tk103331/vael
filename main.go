@@ -4,6 +4,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
@@ -30,6 +31,27 @@ func main() {
 		if pathErr == nil {
 			a.agentsPath = filepath.Join(filepath.Dir(sessionPath), "agents.json")
 			a.loadAgents()
+			a.chatsPath = filepath.Join(filepath.Dir(sessionPath), "chats.json")
+			if saved, err := workspace.LoadChats(a.chatsPath); err == nil {
+				a.chats = saved
+			} else if !os.IsNotExist(err) {
+				log.Printf("读取对话记录失败: %v", err)
+			}
+			a.pluginsDir = filepath.Join(filepath.Dir(sessionPath), "plugins")
+			a.pluginStatesPath = filepath.Join(filepath.Dir(sessionPath), "plugins.json")
+			if saved, err := workspace.LoadPluginStates(a.pluginStatesPath); err == nil {
+				a.pluginStates = saved
+			}
+			a.pluginStoragePath = filepath.Join(filepath.Dir(sessionPath), "plugin-storage.json")
+			if saved, err := workspace.LoadPluginStorage(a.pluginStoragePath); err == nil {
+				a.pluginStorage = saved
+			}
+			a.pluginStorePath = filepath.Join(filepath.Dir(sessionPath), "plugin-store.json")
+			if saved, err := workspace.LoadPluginStore(a.pluginStorePath); err == nil {
+				a.pluginStore = saved
+			}
+			a.loadPlugins()
+			a.loadPluginStore(false)
 			a.lspPath = filepath.Join(filepath.Dir(sessionPath), "lsp.json")
 			a.loadLSPSettings()
 			a.environmentsPath = filepath.Join(filepath.Dir(sessionPath), "environments.json")
@@ -44,6 +66,12 @@ func main() {
 			a.pendingSession = &session
 		}
 		a.win = mygo.NewWindow(mygo.WindowOptions{Title: "Vael", Width: 1280, Height: 840, StateKey: "main", Frameless: true, CornerRadius: 10, Content: ui.View(a.view)})
+		mygo.App.OnNotificationClick(func(id string) {
+			if strings.HasPrefix(id, "vael-agent-") {
+				a.win.Show()
+				a.win.Focus()
+			}
+		})
 		a.win.OnClose(func(e *mygo.CloseEvent) {
 			if a.dirty() {
 				e.PreventDefault()

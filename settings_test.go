@@ -33,6 +33,73 @@ func TestTheSettingsKeepOneHeight(t *testing.T) {
 	}
 }
 
+func TestTheSettingsCanBeSearchedAndReset(t *testing.T) {
+	a := newApp()
+	defer a.shutdown()
+	a.settingsOpen = true
+	a.settingsSection = settingsEditor
+	tt := ui.NewTester(a.view, 1280, 840)
+	tt.Frame()
+	if !tt.HasText("自动换行") || !tt.HasText("缩略图") {
+		t.Fatalf("the settings are not drawn: %v", tt.Texts())
+	}
+	a.settingsQuery = "缩略图"
+	tt.Frame()
+	if !tt.HasText("缩略图") || tt.HasText("自动换行") {
+		t.Fatalf("the search did not filter: %v", tt.Texts())
+	}
+	if !tt.HasText("编辑器") {
+		t.Fatalf("the section of the setting went away: %v", tt.Texts())
+	}
+	a.settingsQuery = "没有这种设置"
+	tt.Frame()
+	if !tt.HasText("没有匹配的设置") {
+		t.Fatalf("nothing says there is no match: %v", tt.Texts())
+	}
+	// Reset puts the section back the way it was.
+	a.settingsQuery = ""
+	a.wrap, a.minimap = true, false
+	a.settingsSection = settingsEditor
+	a.resetSettingsSection(settingsEditor)
+	if a.wrap || !a.minimap || a.tabSize != 0 {
+		t.Fatalf("the editor was not reset: wrap=%v mini=%v tabs=%d", a.wrap, a.minimap, a.tabSize)
+	}
+	a.settingsSection = settingsLook
+	tt.Frame()
+	if !tt.HasText("恢复默认") || !tt.HasText("打开配置目录") {
+		t.Fatalf("the settings actions are not drawn: %v", tt.Texts())
+	}
+	// The about page says what Vael does with the user's work.
+	a.settingsSection = settingsAbout
+	tt.Frame()
+	if !tt.HasText("没有遥测") {
+		t.Fatalf("the about page: %v", tt.Texts())
+	}
+}
+
+func TestTheActivityBarSizeIsOfferedAndKept(t *testing.T) {
+	a := newApp()
+	defer a.shutdown()
+	a.settingsOpen = true
+	a.settingsSection = settingsLook
+	tt := ui.NewTester(a.view, 1280, 840)
+	tt.Frame()
+	if !tt.HasText("图标栏大小") || !tt.HasText("大") {
+		t.Fatalf("the setting is not offered: %v", tt.Texts())
+	}
+	a.activitySize = 32
+	saved := a.snapshot()
+	if saved.ActivitySize != 32 {
+		t.Fatalf("the session: %+v", saved)
+	}
+	opened := newApp()
+	defer opened.shutdown()
+	opened.applyLayout(saved)
+	if opened.activitySize != 32 {
+		t.Fatalf("the size after reopening: %d", opened.activitySize)
+	}
+}
+
 func TestTheSettingsScrollWhatIsTooLong(t *testing.T) {
 	a := newApp()
 	defer a.shutdown()

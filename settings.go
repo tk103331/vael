@@ -1,11 +1,15 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/editor"
+	"vael/internal/core"
 	"vael/internal/workspace"
 )
 
@@ -17,7 +21,76 @@ const (
 	settingsEnv    = "env"
 	settingsLSP    = "lsp"
 	settingsAgent  = "agent"
+	settingsPlugin = "plugin"
+	settingsAbout  = "about"
 )
+
+// settingsCustomAllowed tells whether a section whose settings are drawn
+// by their own view fits the search the user typed.
+func (a *app) settingsCustomAllowed(id string) bool {
+	name, hint, _ := a.settingsPage(id)
+	return a.settingsMatch(name, hint)
+}
+
+// resetSettingsSection puts the settings of a section back the way they
+// were when Vael opened.
+func (a *app) resetSettingsSection(id string) {
+	switch id {
+	case settingsLook:
+		a.setTheme("vael-dark")
+		a.iconID = "badges"
+		a.fontFamily = "monospace"
+		a.fontSize = DefaultFontSize
+		a.lineHeight = 150
+		a.activitySize = 28
+	case settingsEditor:
+		a.wrap = false
+		a.guides, a.autoClose, a.numbers, a.minimap = true, true, true, true
+		a.autoSave = autoSaveOff
+		a.trimOnSave, a.finalNewline, a.formatOnSave = false, false, false
+		a.tabSize = 0
+		a.indent = int(editor.IndentAuto)
+		a.whitespace = int(editor.WhitespaceSelection)
+	}
+	a.message, a.messageKind = "已恢复默认设置", "success"
+}
+
+// aboutSettings is what Vael is, and what it does with the user's work.
+func (a *app) aboutSettings(c *ui.Context, p palette) {
+	a.settingsRow(c, p, "Vael", "版本 "+core.Version+" · "+runtime.Version(), func() {})
+	a.settingsRow(c, p, "隐私", "在本机运行：没有账号，没有遥测，也不上传你的使用数据。", func() {})
+	a.settingsRow(c, p, "Agent 与插件", "通过 ACP 与本地插件工作；代码与对话只在你选择的工具之间流动。", func() {})
+}
+
+// settingsMatch tells whether a setting fits the search the user typed.
+// An empty search fits everything.
+func (a *app) settingsMatch(label, hint string) bool {
+	query := strings.ToLower(strings.TrimSpace(a.settingsQuery))
+	if query == "" {
+		return true
+	}
+	return strings.Contains(strings.ToLower(label), query) ||
+		strings.Contains(strings.ToLower(hint), query)
+}
+
+// settingsPage is the name, the description and the icon of a section.
+func (a *app) settingsPage(id string) (string, string, *ui.SVG) {
+	switch id {
+	case settingsEditor:
+		return "编辑器", "换行、缩进、字体与保存", codeIcon
+	case settingsEnv:
+		return "环境", "本机、SSH、WSL 与 Docker", globeIcon
+	case settingsLSP:
+		return "语言服务器", "诊断、补全、跳转与格式化", lspIcon
+	case settingsAgent:
+		return "ACP Agent", "接入在项目中工作的 Agent", agentIcon
+	case settingsPlugin:
+		return "插件", "插件商店、主题与图标主题", puzzleIcon
+	case settingsAbout:
+		return "关于", "版本与隐私", infoIcon
+	}
+	return "外观", "主题、图标与字号", sunIcon
+}
 
 func (a *app) settingsView(c *ui.Context, p palette) {
 	if !a.settingsOpen {
@@ -27,24 +100,50 @@ func (a *app) settingsView(c *ui.Context, p palette) {
 		a.settingsSection = settingsLook
 	}
 	open := true
+	a.settingsShown = 0
 	ui.Modal(c, &open, func() {
 		// The window keeps one height, whatever a section holds: the
 		// room the content does not need is empty, and what it needs
 		// past the room scrolls.
 		ui.Column(c).Width(760).Height(560).Padding(20).Gap(12).Children(func() {
-			ui.Text(c, "设置").FontSize(17).FontWeight(650)
+			ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(10).Children(func() {
+				ui.Text(c, "设置").FontSize(17).FontWeight(650)
+				ui.Box(c).Grow(1)
+				ui.TextInput(c, &a.settingsQuery).Width(240).Placeholder("搜索设置…").Label("搜索设置")
+			})
 			ui.Row(c).FillWidth().Grow(1).MinHeight(0).Gap(16).AlignItems(ui.Start).Children(func() {
 				// The sections down the left, as an IDE's preferences, and
 				// the one chosen beside them.
 				ui.Column(c).Width(168).Shrink(0).FillHeight().Gap(2).Children(func() {
-					a.settingsTab(c, p, "外观", settingsLook, sunIcon)
-					a.settingsTab(c, p, "编辑器", settingsEditor, codeIcon)
-					a.settingsTab(c, p, "环境", settingsEnv, globeIcon)
-					a.settingsTab(c, p, "语言服务器", settingsLSP, lspIcon)
-					a.settingsTab(c, p, "ACP Agent", settingsAgent, agentIcon)
+					for _, id := range []string{
+						settingsLook, settingsEditor, settingsEnv,
+						settingsLSP, settingsAgent, settingsPlugin, settingsAbout,
+					} {
+						label, hint, icon := a.settingsPage(id)
+						if !a.settingsMatch(label, hint) && id != settingsLook && id != settingsEditor {
+							// The rows of the look and editor pages are
+							// filtered themselves, so their tabs stay.
+							continue
+						}
+						a.settingsTab(c, p, label, id, icon)
+					}
 				})
 				ui.Divider(c)
 				ui.Column(c).Grow(1).MinWidth(0).FillHeight().Children(func() {
+					name, hint, icon := a.settingsPage(a.settingsSection)
+					ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(8).Children(func() {
+						ui.Icon(c, icon).Size(16, 16).TextColor(p.accent)
+						ui.Column(c).Grow(1).MinWidth(0).Gap(1).Children(func() {
+							ui.Text(c, name).FontSize(13).FontWeight(650).TextColor(p.text)
+							ui.Text(c, hint).FontSize(10).TextColor(p.muted).SingleLine().Ellipsis("…")
+						})
+						switch a.settingsSection {
+						case settingsLook, settingsEditor:
+							if quiet(c, "恢复默认", false, p) {
+								a.resetSettingsSection(a.settingsSection)
+							}
+						}
+					})
 					ui.Scroll(c).FillWidth().FillHeight().Children(func() {
 						ui.Column(c).FillWidth().Gap(2).Children(func() {
 							switch a.settingsSection {
@@ -56,16 +155,28 @@ func (a *app) settingsView(c *ui.Context, p palette) {
 								a.lspSettingsView(c, p)
 							case settingsAgent:
 								a.agentsSettings(c, p)
+							case settingsPlugin:
+								a.pluginSettings(c, p)
+							case settingsAbout:
+								a.aboutSettings(c, p)
 							default:
 								a.lookSettings(c, p)
+							}
+							if a.settingsQuery != "" && a.settingsShown == 0 {
+								ui.Text(c, "没有匹配的设置。").FontSize(11.5).TextColor(p.muted).Padding(10, 8)
 							}
 						})
 					})
 				})
 			})
 			ui.Divider(c)
-			ui.Row(c).FillWidth().Children(func() {
+			ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(8).Children(func() {
 				ui.Text(c, "设置随会话保留。").FontSize(10.5).TextColor(p.muted).Grow(1)
+				if quiet(c, "打开配置目录", false, p) {
+					if dir, err := os.UserConfigDir(); err == nil {
+						mygoShellOpenPath(filepath.Join(dir, "vael"))
+					}
+				}
 				if ui.Button(c, "完成").Clicked() {
 					open = false
 				}
@@ -78,6 +189,24 @@ func (a *app) settingsView(c *ui.Context, p palette) {
 		}
 		a.settingsOpen = false
 	}
+}
+
+// settingsBadge is the count beside a section of the settings: how many
+// servers, agents or plugins it holds.
+func (a *app) settingsBadge(section string) string {
+	var count int
+	switch section {
+	case settingsLSP:
+		count = len(a.lspOn)
+	case settingsAgent:
+		count = len(a.agents.Items)
+	case settingsPlugin:
+		count = len(a.plugins)
+	}
+	if count == 0 {
+		return ""
+	}
+	return strconv.Itoa(count)
 }
 
 // settingsTab is a section of the settings, down the left of it: an icon,
@@ -103,6 +232,9 @@ func (a *app) settingsTab(c *ui.Context, p palette, label, section string, icon 
 		}
 		ui.Text(c, label).FontSize(12).FontWeight(600).TextColor(nameColor).
 			SingleLine().Ellipsis("…")
+		if count := a.settingsBadge(section); count != "" {
+			ui.Text(c, count).FontSize(9).FontFeatures("tnum").TextColor(p.muted)
+		}
 	})
 	if b.Clicked() {
 		a.settingsSection = section
@@ -114,6 +246,10 @@ func (a *app) settingsTab(c *ui.Context, p palette, label, section string, icon 
 // settingsRow is one setting: what it is, what it does, and the control
 // that changes it.
 func (a *app) settingsRow(c *ui.Context, p palette, label, hint string, control func()) {
+	if !a.settingsMatch(label, hint) {
+		return
+	}
+	a.settingsShown++
 	ui.Row(c).FillWidth().Padding(6, 4).Gap(10).AlignItems(ui.Center).Children(func() {
 		ui.Column(c).Grow(1).MinWidth(0).Gap(2).Children(func() {
 			ui.Text(c, label).FontSize(12.5).TextColor(p.text).SingleLine().Ellipsis("…")
@@ -174,23 +310,31 @@ type settingsOption struct {
 func (a *app) lookSettings(c *ui.Context, p palette) {
 	ui.Column(c).FillWidth().Gap(2).Children(func() {
 		// The themes, each as a swatch of its own colours.
-		ui.Row(c).FillWidth().Padding(6, 4).Gap(8).AlignItems(ui.Center).Children(func() {
-			ui.Column(c).Grow(1).MinWidth(0).Gap(2).Children(func() {
-				ui.Text(c, "主题").FontSize(12.5).TextColor(p.text)
-				ui.Text(c, "界面与编辑器的配色").FontSize(10.5).TextColor(p.muted)
+		if a.settingsMatch("主题", "界面与编辑器的配色") {
+			ui.Row(c).FillWidth().Padding(6, 4).Gap(8).AlignItems(ui.Center).Children(func() {
+				ui.Column(c).Grow(1).MinWidth(0).Gap(2).Children(func() {
+					ui.Text(c, "主题").FontSize(12.5).TextColor(p.text)
+					ui.Text(c, "界面与编辑器的配色").FontSize(10.5).TextColor(p.muted)
+				})
 			})
-		})
-		ui.Box(c).FillWidth().Padding(0, 4).Children(func() {
-			ui.Row(c).FillWidth().Wrap().Gap(6).Children(func() {
-				for _, theme := range uiThemes {
-					theme := theme
-					a.themeSwatch(c, p, theme)
-				}
+		}
+		if a.settingsMatch("主题", "界面与编辑器的配色") {
+			a.settingsShown++
+			ui.Box(c).FillWidth().Padding(0, 4).Children(func() {
+				ui.Row(c).FillWidth().Wrap().Gap(6).Children(func() {
+					for _, theme := range append(append([]uiTheme(nil), uiThemes...), a.pluginThemes...) {
+						theme := theme
+						a.themeSwatch(c, p, theme)
+					}
+				})
 			})
-		})
+		}
+		a.settingsChoice(c, p, "图标栏大小", "左侧与右侧图标栏的按钮大小", []settingsOption{
+			{label: "小", value: 24}, {label: "标准", value: 28}, {label: "大", value: 32},
+		}, &a.activitySize)
 		// The icon theme: the marks of the files of the tree and the tabs.
 		a.settingsRow(c, p, "图标主题", "文件树与标签页的标记", func() {
-			for _, icons := range iconThemes {
+			for _, icons := range pluginIconChoices(a) {
 				icons := icons
 				chosen := a.iconThemeFor() == icons.ID
 				b := ui.ButtonBase(c).Height(24).Padding(0, 9).Radius(5).AlignItems(ui.Center).
@@ -317,10 +461,15 @@ func (a *app) editorSettings(c *ui.Context, p palette) {
 // agentsSettings is the ACP agents the editor starts: those it knows, and
 // the ways to add one.
 func (a *app) agentsSettings(c *ui.Context, p palette) {
+	if !a.settingsCustomAllowed(settingsAgent) {
+		return
+	}
 	ui.Column(c).FillWidth().Gap(10).Children(func() {
 		ui.Text(c, "Agent 通过 ACP（Agent Client Protocol）在你自己的机器上启动，"+
 			"在你的项目里开会话：读写文件、运行命令都在本机完成。").
 			FontSize(10.5).TextColor(p.muted)
+		a.settingsSwitch(c, p, "Agent 完成时通知", "窗口不在前面时，用系统通知告诉你这一轮结束了", &a.notifyAgent)
+		ui.Divider(c)
 		if len(a.agents.Items) == 0 {
 			ui.Text(c, "还没有接入 Agent。从下面的 Registry 选一个，或自己填启动命令。").
 				FontSize(11.5).TextColor(p.muted).Padding(4, 2)

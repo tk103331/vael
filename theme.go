@@ -82,12 +82,29 @@ func themeByID(id string) uiTheme {
 }
 
 // themeFor is the theme of the app, whose colours every part draws with.
-func (a *app) theme() uiTheme { return themeByID(a.themeID) }
+// A theme a plugin brought is used the same way as a built-in one.
+func (a *app) theme() uiTheme {
+	if theme := a.pluginTheme(a.themeID); theme != nil {
+		return *theme
+	}
+	return themeByID(a.themeID)
+}
 
 // themeOfDark is the theme of a family that is dark, or light: what the
-// theme does, and its other side.
-func themeOfDark(id string, dark bool) string {
-	want := themeByID(id)
+// theme does, and its other side. It finds the other side of a theme a
+// plugin brought too.
+func (a *app) themeOfDark(id string, dark bool) string {
+	var want uiTheme
+	if plugin := a.pluginTheme(id); plugin != nil {
+		want = *plugin
+	} else {
+		want = themeByID(id)
+	}
+	for _, theme := range a.pluginThemes {
+		if theme.Family == want.Family && theme.Dark == dark {
+			return theme.ID
+		}
+	}
 	for _, theme := range uiThemes {
 		if theme.Family == want.Family && theme.Dark == dark {
 			return theme.ID
@@ -104,13 +121,16 @@ func themeOfDark(id string, dark bool) string {
 // setTheme changes the theme of the window, and says whether the editor is
 // dark now, which its own theme follows.
 func (a *app) setTheme(id string) {
-	a.themeID = themeByID(id).ID
+	if a.pluginTheme(id) == nil {
+		id = themeByID(id).ID
+	}
+	a.themeID = id
 	a.dark = a.theme().Dark
 }
 
 // toggleDark switches between the dark and light side of the same family,
 // as Cmd+Shift+L does.
-func (a *app) toggleDark() { a.setTheme(themeOfDark(a.themeID, !a.dark)) }
+func (a *app) toggleDark() { a.setTheme(a.themeOfDark(a.themeID, !a.dark)) }
 
 // editorTheme is the theme the editor, the differences and the terminal
 // draw with: the palettes of the window, on the editor's own theme.
@@ -143,6 +163,9 @@ type mark struct {
 
 // iconThemeFor is the icon theme of the app.
 func (a *app) iconThemeFor() string {
+	if a.pluginIconTheme() != nil {
+		return a.iconID
+	}
 	for _, theme := range iconThemes {
 		if theme.ID == a.iconID {
 			return theme.ID
@@ -154,6 +177,10 @@ func (a *app) iconThemeFor() string {
 // markFor is the mark of a file, by its name, in the icon theme of the
 // app.
 func (a *app) markFor(name string) mark {
+	// A plugin's icon theme says how its kinds of files are marked.
+	if item, ok := a.pluginMark(name); ok {
+		return item
+	}
 	badge := glyphFor(name)
 	if a.iconThemeFor() != "glyphs" {
 		return mark{text: badge.text, color: badge.color}

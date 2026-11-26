@@ -69,8 +69,11 @@ func TestACPAgentHelper(t *testing.T) {
 				"result": map[string]any{
 					"protocolVersion": acpProtocolVersion,
 					"agentCapabilities": map[string]any{
-						"loadSession":         true,
-						"sessionCapabilities": map[string]any{"list": map[string]any{}},
+						"loadSession": true,
+						"session":     map[string]any{"fork": map[string]any{}},
+						"sessionCapabilities": map[string]any{
+							"list": map[string]any{},
+						},
 					},
 					"agentInfo": map[string]any{"name": "Helper", "version": "1"},
 				},
@@ -99,6 +102,52 @@ func TestACPAgentHelper(t *testing.T) {
 						"availableCommands": []any{
 							map[string]any{"name": "review", "description": "审查代码"},
 						},
+					},
+				},
+			})
+			write(map[string]any{
+				"jsonrpc": "2.0", "method": "session/update",
+				"params": map[string]any{
+					"sessionId": "s1",
+					"update": map[string]any{
+						"sessionUpdate": "usage_update",
+						"used":          53000, "size": 200000,
+						"cost": map[string]any{"amount": 0.045, "currency": "USD"},
+					},
+				},
+			})
+			write(map[string]any{
+				"jsonrpc": "2.0", "method": "session/update",
+				"params": map[string]any{
+					"sessionId": "s1",
+					"update": map[string]any{
+						"sessionUpdate": "session_info_update",
+						"title":         "助手会话",
+					},
+				},
+			})
+		case "session/fork":
+			write(map[string]any{
+				"jsonrpc": "2.0", "id": *message.ID,
+				"result": map[string]any{
+					"sessionId":     "forked1",
+					"configOptions": configs(),
+					"modes": map[string]any{
+						"currentModeId": mode,
+						"availableModes": []any{
+							map[string]any{"id": "ask", "name": "Ask"},
+							map[string]any{"id": "code", "name": "Code"},
+						},
+					},
+				},
+			})
+			write(map[string]any{
+				"jsonrpc": "2.0", "method": "session/update",
+				"params": map[string]any{
+					"sessionId": "forked1",
+					"update": map[string]any{
+						"sessionUpdate": "session_info_update",
+						"title":         "分叉会话",
 					},
 				},
 			})
@@ -189,6 +238,116 @@ func TestACPAgentHelper(t *testing.T) {
 			})
 			write(map[string]any{"jsonrpc": "2.0", "id": *message.ID, "result": map[string]any{}})
 		case "session/prompt":
+			if promptWants(message.Params, "subagent") {
+				// The agent opens a child session, and the child sends a
+				// message back to the parent.
+				write(map[string]any{
+					"jsonrpc": "2.0", "method": "session/update",
+					"params": map[string]any{
+						"sessionId": "s1",
+						"update": map[string]any{
+							"sessionUpdate": "subagent_update",
+							"sessionId":     "child1",
+							"title":         "子任务",
+							"description":   "看看测试",
+							"state":         "running",
+						},
+					},
+				})
+				write(map[string]any{
+					"jsonrpc": "2.0", "method": "session/update",
+					"params": map[string]any{
+						"sessionId": "s1",
+						"update": map[string]any{
+							"sessionUpdate":      "session_message",
+							"messageId":          "m1",
+							"senderSessionId":    "child1",
+							"recipientSessionId": "s1",
+							"content": []any{
+								map[string]any{"type": "text", "text": "子任务做完了"},
+							},
+						},
+					},
+				})
+				write(map[string]any{
+					"jsonrpc": "2.0", "method": "session/update",
+					"params": map[string]any{
+						"sessionId": "s1",
+						"update": map[string]any{
+							"sessionUpdate": "agent_message_chunk",
+							"content":       map[string]any{"type": "text", "text": "子任务做完了"},
+						},
+					},
+				})
+				write(map[string]any{
+					"jsonrpc": "2.0", "id": *message.ID,
+					"result": map[string]any{"stopReason": "end_turn"},
+				})
+				continue
+			}
+			if promptWants(message.Params, "notice") {
+				write(map[string]any{
+					"jsonrpc": "2.0", "method": "session/update",
+					"params": map[string]any{
+						"sessionId": "s1",
+						"update": map[string]any{
+							"sessionUpdate": "notice",
+							"severity":      "warning",
+							"title":         "注意",
+							"description":   "这里有一件要注意的事",
+						},
+					},
+				})
+				write(map[string]any{
+					"jsonrpc": "2.0", "id": *message.ID,
+					"result": map[string]any{"stopReason": "end_turn"},
+				})
+				continue
+			}
+			if promptWants(message.Params, "compact") {
+				write(map[string]any{
+					"jsonrpc": "2.0", "method": "session/update",
+					"params": map[string]any{
+						"sessionId": "s1",
+						"update": map[string]any{
+							"sessionUpdate": "compaction_update",
+							"compactionId":  "c1",
+							"status":        "completed",
+							"summary": []any{
+								map[string]any{"type": "text", "text": "留下了摘要"},
+							},
+						},
+					},
+				})
+				write(map[string]any{
+					"jsonrpc": "2.0", "id": *message.ID,
+					"result": map[string]any{"stopReason": "end_turn"},
+				})
+				continue
+			}
+			if promptWants(message.Params, "plan") {
+				write(map[string]any{
+					"jsonrpc": "2.0", "method": "session/update",
+					"params": map[string]any{
+						"sessionId": "s1",
+						"update": map[string]any{
+							"sessionUpdate": "plan_update",
+							"plan": map[string]any{
+								"type": "items",
+								"entries": []any{
+									map[string]any{"content": "读代码", "priority": "high", "status": "completed"},
+									map[string]any{"content": "改代码", "priority": "high", "status": "in_progress"},
+								},
+							},
+						},
+					},
+				})
+				write(map[string]any{
+					"jsonrpc": "2.0", "id": *message.ID,
+					"result": map[string]any{"stopReason": "end_turn"},
+				})
+				continue
+			}
 			if promptWantsTool(message.Params) {
 				// A tool, its output, a plan, and a request for what the
 				// user allows.
@@ -329,10 +488,13 @@ func TestACPConnSpeaks(t *testing.T) {
 	for {
 		select {
 		case update := <-updates:
-			if update.Update.SessionUpdate == "available_commands_update" {
+			switch update.Update.SessionUpdate {
+			case "available_commands_update":
 				if len(update.Update.AvailableCommands) != 1 || update.Update.AvailableCommands[0].Name != "review" {
 					t.Fatalf("commands: %+v", update.Update.AvailableCommands)
 				}
+				continue
+			case "usage_update", "session_info_update":
 				continue
 			}
 			if update.Update.SessionUpdate != "agent_message_chunk" || update.Words() != "你好" {

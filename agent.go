@@ -3,10 +3,14 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"math"
 	"strconv"
 	"strings"
+	"time"
 
+	"github.com/egoist/mygo"
+	"github.com/egoist/mygo/transfer"
 	"github.com/egoist/mygo/ui"
 	"vael/internal/core"
 	"vael/internal/workspace"
@@ -38,6 +42,14 @@ type agentLine struct {
 type acpPending struct {
 	id  int
 	ask acpPermission
+}
+
+// agentQueued is a message typed while the agent works: it waits in
+// order, with the references that rode along when it was written, and
+// goes as soon as the turn that runs ends.
+type agentQueued struct {
+	Text string
+	Refs []agentRef
 }
 
 // loadAgents reads the agents the editor starts, and the one it starts by
@@ -82,6 +94,7 @@ func (a *app) startAgent() {
 	a.agentCancel = cancel
 	a.agentConn = nil
 	a.agentSession = ""
+	a.resetAgentUsage()
 	a.agentStatus = "启动中…"
 	a.agentLines = append(a.agentLines,
 		agentLine{Kind: "note", Text: "启动 " + chosen.Name + "…"})
@@ -106,6 +119,16 @@ func (a *app) startAgent() {
 			"protocolVersion": acpProtocolVersion,
 			"clientCapabilities": map[string]any{
 				"fs": map[string]any{"readTextFile": false, "writeTextFile": false},
+				// What the editor can show: the boolean options of a
+				// session, its notices, the compaction of its context,
+				// the plans it keeps, and the child sessions it opens.
+				"session": map[string]any{
+					"configOptions": map[string]any{"boolean": map[string]any{}},
+					"notices":       map[string]any{},
+					"compaction":    map[string]any{},
+				},
+				"subagents": map[string]any{},
+				"plan":      map[string]any{},
 			},
 			"clientInfo": map[string]any{"name": "Vael", "version": core.Version},
 		}, &init)
@@ -139,6 +162,7 @@ func (a *app) startAgent() {
 				a.agentSession = session.SessionID
 				a.agentCanLoad = init.AgentCapabilities.LoadSession
 				a.agentCanList = init.canListSessions()
+				a.agentCanFork = init.canForkSessions()
 				a.agentSessions = nil
 				a.agentSessionsLoaded = false
 				a.agentConfig = session.ConfigOptions
@@ -286,12 +310,16 @@ func (a *app) stopAgent() {
 	a.agentCommands = nil
 	a.agentCommand = ""
 	a.agentRefs = nil
+	a.resetAgentUsage()
 	a.agentMentionOpen = false
 	a.agentSessions = nil
 	a.agentSessionsLoaded = false
 	a.agentHistoryOpen = false
 	a.agentCanLoad = false
 	a.agentCanList = false
+	a.agentCanFork = false
+	a.forkPending = ""
+	a.forkUpdates = nil
 	a.agentLoading = false
 	a.agentStatus = "已停止"
 	if a.agentCancel != nil {
@@ -318,6 +346,13 @@ func (a *app) incomingAgent(run int, message acpMessage) {
 		}
 		a.update(func() {
 			if run != a.agentRun {
+				return
+			}
+			// While a fork is being made, the new session has no tab yet: keep
+			// its early updates until the tab is there, and do not put
+			// them in the source conversation.
+			if a.forkPending != "" && update.SessionID != a.agentSession {
+				a.forkUpdates = append(a.forkUpdates, update)
 				return
 			}
 			a.chatWithSession(update.SessionID, func() { a.applyAgentUpdate(update) })
@@ -435,6 +470,214 @@ func (a *app) applyAgentUpdate(update acpUpdate) {
 		// The slash commands the agent offers. They are shown as
 		// candidates as soon as "/" is typed in the composer.
 		a.agentCommands = update.Update.AvailableCommands
+	case "session_info_update":
+		// The session names itself as the conversation moves on, unless
+		// the user named it first.
+		tab := a.chatForSession(update.SessionID)
+		if tab == nil {
+			if a.agentSession != "" {
+				return
+			}
+			// The session is still being made: its name belongs to the
+			// tab that asked for it.
+			tab = a.chatActive()
+		}
+		if update.Update.UpdatedAt != "" {
+			tab.updated = update.Update.UpdatedAt
+		}
+		if title := strings.TrimSpace(update.Update.Title); title != "" && !tab.renamed {
+			tab.title, tab.titled = title, true
+		}
+	case "usage_update":
+		// How much of the context window the session has filled, and what
+		// it has spent so far.
+		a.applyAgentUsage(update)
+	case "notice":
+		// Something the agent says to the user, outside the conversation.
+		a.showAgentNotice(update)
+	case "compaction_update":
+		// The agent compressed the context of the session to keep going.
+		a.applyAgentCompaction(update)
+	case "plan_update":
+		if plan := update.Update.Plan; plan != nil {
+			a.agentPlan = plan.Entries
+			if plan.Markdown != "" {
+				a.agentPlan = []acpPlanEntry{{Content: plan.Markdown, Priority: "medium", Status: "in_progress"}}
+			}
+			a.agentPlanOpen = true
+		}
+	case "plan_removed":
+		a.agentPlan = nil
+	case "subagent_update":
+		// The agent opened a child session of its own: it gets a tab of
+		// its own, as a subagent of the conversation.
+		a.openSubagentTab(update)
+	case "session_message":
+		// A message the agent sent to another session, or one it sent to
+		// this one.
+		a.showSessionMessage(update, false)
+	case "session_message_chunk":
+		a.showSessionMessage(update, true)
+	}
+}
+
+// showAgentNotice shows what the agent says to the user, as a notice
+// above the window.
+func (a *app) showAgentNotice(update acpUpdate) {
+	title := strings.TrimSpace(update.Update.Title)
+	if title == "" {
+		return
+	}
+	text := title
+	if description := strings.TrimSpace(update.Update.Description); description != "" {
+		text += "：" + description
+	}
+	a.message = text
+	switch strings.ToLower(update.Update.Severity) {
+	case "warning", "warn":
+		a.messageKind = "warning"
+	case "error":
+		a.messageKind = "error"
+	default:
+		a.messageKind = ""
+	}
+}
+
+// applyAgentCompaction says that the agent compressed the context of the
+// session, and what it kept of it.
+func (a *app) applyAgentCompaction(update acpUpdate) {
+	status := strings.TrimSpace(update.Update.Status)
+	text := "上下文已压缩"
+	switch strings.ToLower(status) {
+	case "failed":
+		text = "上下文压缩失败"
+	case "in_progress", "pending":
+		text = "正在压缩上下文"
+	case "", "completed":
+	default:
+		text += "：" + status
+	}
+	if summary := compactionSummary(update.Update.Summary); summary != "" {
+		text += "\n" + summary
+	}
+	a.appendAgentLine("note", text)
+}
+
+// compactionSummary reads what a compaction kept of the conversation.
+func compactionSummary(summary []acpContent) string {
+	var lines []string
+	for _, block := range summary {
+		if words := strings.TrimSpace(block.Reads()); words != "" {
+			lines = append(lines, words)
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+// openSubagentTab opens the child session the agent made in a tab of its
+// own, and keeps what the agent says about it there.
+func (a *app) openSubagentTab(update acpUpdate) {
+	session := strings.TrimSpace(update.Update.SessionID)
+	if session == "" {
+		return
+	}
+	title := strings.TrimSpace(update.Update.Title)
+	if title == "" {
+		title = "子 Agent"
+	}
+	state := strings.TrimSpace(update.Update.State)
+	a.ensureChats()
+	for _, tab := range a.chatTabs {
+		if tab.state.session != session {
+			continue
+		}
+		if title != "" {
+			tab.title, tab.titled = title, true
+		}
+		tab.subState = state
+		return
+	}
+	now := time.Now().Format(time.RFC3339)
+	tab := &chatTab{id: a.nextChatID(), title: title, titled: true, updated: now,
+		subagent: true, subState: state}
+	tab.state = blankChatState()
+	tab.state.session, tab.state.status = session, "子 Agent"
+	a.chatTabs = append(a.chatTabs, tab)
+	a.sortChatTabs()
+}
+
+// showSessionMessage shows a message the agent sent to another session,
+// or one it sent to this one, in the conversation it belongs to.
+func (a *app) showSessionMessage(update acpUpdate, chunk bool) {
+	sender, recipient := update.Update.SenderSessionID, update.Update.RecipientSessionID
+	text := ""
+	if chunk {
+		var block acpContent
+		if len(update.Update.Content) > 0 {
+			_ = json.Unmarshal(update.Update.Content, &block)
+		}
+		text = block.Reads()
+	} else {
+		var blocks []acpContent
+		if len(update.Update.Content) > 0 {
+			_ = json.Unmarshal(update.Update.Content, &blocks)
+		}
+		var lines []string
+		for _, block := range blocks {
+			if words := strings.TrimSpace(block.Reads()); words != "" {
+				lines = append(lines, words)
+			}
+		}
+		text = strings.Join(lines, "\n")
+	}
+	if strings.TrimSpace(text) == "" {
+		return
+	}
+	// The message goes from one session to another: the panel says which
+	// way it went.
+	other := recipient
+	arrow := "→"
+	if sender != "" && sender != a.agentSession {
+		other, arrow = sender, "←"
+	}
+	name := a.chatNameOfSession(other)
+	if arrow == "→" {
+		a.appendAgentLine("relay", "→ "+name+"："+text)
+	} else {
+		a.appendAgentLine("relay", "← "+name+"："+text)
+	}
+}
+
+// chatNameOfSession is the name of a session, as the panel knows it.
+func (a *app) chatNameOfSession(session string) string {
+	if session == "" {
+		return "另一个会话"
+	}
+	if tab := a.chatForSession(session); tab != nil && strings.TrimSpace(tab.title) != "" {
+		return tab.title
+	}
+	return shortSessionID(session)
+}
+
+// applyAgentUsage takes the context window and the cost of the session,
+// warns once as the window fills, and keeps the usage of the tab it
+// belongs to.
+func (a *app) applyAgentUsage(update acpUpdate) {
+	if update.Update.Size <= 0 {
+		return
+	}
+	a.agentUsed, a.agentSize = update.Update.Used, update.Update.Size
+	if cost := update.Update.Cost; cost != nil {
+		a.agentCost, a.agentCostCurrency = cost.Amount, cost.Currency
+	}
+	percent := a.agentUsagePercent()
+	switch {
+	case percent >= 90 && !a.agentUsageWarned:
+		a.agentUsageWarned = true
+		a.message = fmt.Sprintf("上下文已用 %d%%，建议新建会话或让 Agent 压缩。", percent)
+		a.messageKind = "warning"
+	case percent < 80:
+		a.agentUsageWarned = false
 	}
 }
 
@@ -555,10 +798,12 @@ func (a *app) sendToAgent() {
 }
 
 // sendAgentText asks the agent what the words say, as the box and the
-// text area do.
+// text area do. While a turn runs the message waits in the queue instead,
+// as the conversation keeps taking what the user types.
 func (a *app) sendAgentText(text string) {
 	text = strings.TrimSpace(text)
-	if text == "" {
+	refs := a.agentRefs
+	if text == "" && len(refs) == 0 {
 		return
 	}
 	if a.agentConn == nil || a.agentSession == "" {
@@ -568,13 +813,34 @@ func (a *app) sendAgentText(text string) {
 		return
 	}
 	if a.agentBusy {
+		a.agentQueue = append(a.agentQueue, agentQueued{Text: text, Refs: refs})
+		a.clearAgentComposer()
 		return
 	}
-	prompt := a.agentPromptBlocks(text)
+	a.clearAgentComposer()
+	a.sendAgentMessage(text, refs)
+}
+
+// clearAgentComposer empties the box once its message went, or joined
+// the queue.
+func (a *app) clearAgentComposer() {
 	a.agentInput, a.agentRefs, a.agentCommand = "", nil, ""
 	a.agentMentionOpen, a.agentMentionDismissed = false, ""
 	a.agentCaret, a.agentCaretPending = 0, -1
-	a.agentLines = append(a.agentLines, agentLine{Kind: "you", Text: text})
+}
+
+// sendAgentMessage starts a turn of the session that runs with a message
+// and the references it carries. The caller has taken them from the box.
+func (a *app) sendAgentMessage(text string, refs []agentRef) {
+	if a.agentConn == nil || a.agentSession == "" {
+		return
+	}
+	prompt := a.agentPromptBlocksWith(text, refs)
+	shown := text
+	if shown == "" {
+		shown = "（图片）"
+	}
+	a.agentLines = append(a.agentLines, agentLine{Kind: "you", Text: shown})
 	a.agentBusy = true
 	a.followAgent()
 	a.chatSyncTitle()
@@ -595,21 +861,105 @@ func (a *app) sendAgentText(text string) {
 				a.agentBusy = false
 				if err != nil {
 					a.agentLines = append(a.agentLines, agentLine{Kind: "error", Text: err.Error()})
-					return
+				} else {
+					switch result.StopReason {
+					case "cancelled":
+						a.agentLines = append(a.agentLines, agentLine{Kind: "note", Text: "本轮已取消。"})
+					case "input_required":
+						a.agentLines = append(a.agentLines, agentLine{
+							Kind: "note", Text: "Agent 需要你的补充：直接回答即可。",
+						})
+					case "refusal":
+						a.agentLines = append(a.agentLines, agentLine{Kind: "note", Text: "Agent 拒绝了这个请求。"})
+					}
 				}
-				switch result.StopReason {
-				case "cancelled":
-					a.agentLines = append(a.agentLines, agentLine{Kind: "note", Text: "本轮已取消。"})
-				case "input_required":
-					a.agentLines = append(a.agentLines, agentLine{
-						Kind: "note", Text: "Agent 需要你的补充：直接回答即可。",
-					})
-				case "refusal":
-					a.agentLines = append(a.agentLines, agentLine{Kind: "note", Text: "Agent 拒绝了这个请求。"})
+				// The messages that waited for this turn go now, in order.
+				a.flushAgentQueue()
+				if err == nil && result.StopReason != "cancelled" && !a.agentBusy {
+					a.notifyAgentDone()
 				}
 			})
 		})
 	}()
+}
+
+// notifyAgentDone says the agent finished a turn, when the window is not
+// in front, as a desktop notification; a click brings the window back.
+func (a *app) notifyAgentDone() {
+	if !a.notifyAgent || a.win == nil || a.win.IsFocused() {
+		return
+	}
+	title := "Agent 完成了这一轮"
+	if tab := a.chatActive(); tab != nil && strings.TrimSpace(tab.title) != "" {
+		title = tab.title + " · 完成"
+	}
+	body := "回到 Vael 继续对话。"
+	for i := len(a.agentLines) - 1; i >= 0; i-- {
+		if a.agentLines[i].Kind == "agent" {
+			if words := strings.TrimSpace(a.agentLines[i].Text); words != "" {
+				body = firstLines(words, 2)
+			}
+			break
+		}
+	}
+	note := mygo.NewNotification(mygo.NotificationOptions{
+		ID:    "vael-agent-" + a.agentSession,
+		Title: title,
+		Body:  body,
+		Group: "vael-agent",
+	})
+	go func() { _ = note.Show() }()
+}
+
+// flushAgentQueue starts the next message that waited while the agent
+// worked, if one waits and no turn runs.
+func (a *app) flushAgentQueue() {
+	if a.agentBusy || len(a.agentQueue) == 0 {
+		return
+	}
+	if a.agentConn == nil || a.agentSession == "" {
+		return
+	}
+	item := a.agentQueue[0]
+	a.agentQueue = a.agentQueue[1:]
+	a.sendAgentMessage(item.Text, item.Refs)
+}
+
+// steerAgent says a waiting message now: it goes to the front of the
+// queue, and the turn that runs is cancelled, so that the agent reads it
+// as soon as it stops.
+func (a *app) steerAgent(index int) {
+	if index < 0 || index >= len(a.agentQueue) {
+		return
+	}
+	item := a.agentQueue[index]
+	a.agentQueue = append(a.agentQueue[:index], a.agentQueue[index+1:]...)
+	a.agentQueue = append([]agentQueued{item}, a.agentQueue...)
+	if !a.agentBusy {
+		a.flushAgentQueue()
+		return
+	}
+	a.cancelAgentPrompt()
+}
+
+// editQueuedAgent takes a waiting message back to the box, with its
+// references, so that it can be changed before it goes.
+func (a *app) editQueuedAgent(index int) {
+	if index < 0 || index >= len(a.agentQueue) {
+		return
+	}
+	item := a.agentQueue[index]
+	a.agentQueue = append(a.agentQueue[:index], a.agentQueue[index+1:]...)
+	switch {
+	case item.Text == "":
+		// Only the references were waiting.
+	case a.agentInput == "":
+		a.agentInput = item.Text
+	default:
+		a.agentInput = strings.TrimRight(a.agentInput, "\n") + "\n" + item.Text
+	}
+	a.agentRefs = append(a.agentRefs, item.Refs...)
+	a.agentCaretPending = len([]rune(a.agentInput))
 }
 
 // queuePermission puts a request of the agent in line, or answers it at
@@ -856,6 +1206,7 @@ func (a *app) restartAgentSession() {
 	conn, cwd := a.agentConn, a.root
 	run := a.agentRun
 	a.agentSession = ""
+	a.resetAgentUsage()
 	a.agentStatus = "新建会话中…"
 	go func() {
 		ctx, cancel := context.WithCancel(context.Background())
@@ -885,6 +1236,78 @@ func (a *app) restartAgentSession() {
 			})
 		})
 	}()
+}
+
+// forkAgentSession makes a new session from the one the user chose, and
+// opens it in a tab of its own: the conversation before the fork stays as
+// it was.
+func (a *app) forkAgentSession(source string) {
+	if a.agentConn == nil || source == "" {
+		a.message = "先启动 Agent，再分叉会话。"
+		return
+	}
+	if !a.agentCanFork {
+		a.message = "这个 Agent 不支持分叉会话（session/fork）。"
+		return
+	}
+	if a.forkPending != "" {
+		return
+	}
+	a.chatSave()
+	name := "新会话"
+	if tab := a.chatForSession(source); tab != nil && strings.TrimSpace(tab.title) != "" {
+		name = tab.title
+	}
+	a.forkPending = source
+	run, conn := a.agentRun, a.agentConn
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	go func() {
+		var session acpSession
+		err := conn.call(ctx, "session/fork", map[string]any{
+			"sessionId": source, "cwd": a.root, "mcpServers": []any{},
+		}, &session)
+		a.update(func() {
+			defer cancel()
+			a.forkPending = ""
+			if run != a.agentRun || a.agentConn != conn {
+				a.forkUpdates = nil
+				return
+			}
+			if err != nil {
+				a.forkUpdates = nil
+				a.message, a.messageKind = "分叉失败："+err.Error(), "error"
+				return
+			}
+			a.openForkedChat(source, name, session)
+		})
+	}()
+}
+
+// openForkedChat is the tab of a session the agent forked from another
+// one: it holds the new session, its selectors, and a note of where it
+// came from.
+func (a *app) openForkedChat(source, name string, session acpSession) {
+	a.chatSave()
+	state := blankChatState()
+	state.session, state.status = session.SessionID, "已连接"
+	state.config = session.ConfigOptions
+	state.modes = session.Modes.AvailableModes
+	state.modeID = session.Modes.CurrentModeID
+	if session.AvailableCommands != nil {
+		state.commands = session.AvailableCommands
+	}
+	state.lines = append(state.lines, agentLine{Kind: "note", Text: "已从「" + name + "」分叉出新会话。"})
+	tab := &chatTab{id: a.nextChatID(), title: "分叉：" + name,
+		updated: time.Now().Format(time.RFC3339), state: state}
+	a.chatTabs = append(a.chatTabs, tab)
+	a.chatActivate(len(a.chatTabs) - 1)
+	// What the agent said about the fork before it had a tab goes here.
+	for _, update := range a.forkUpdates {
+		a.applyAgentUpdate(update)
+	}
+	a.forkUpdates = nil
+	a.agentSessionsLoaded = false
+	a.followAgent()
 }
 
 // cancelAgentPrompt ends the turn that runs.
@@ -928,6 +1351,13 @@ func (a *app) agentLineView(c *ui.Context, p palette, line *agentLine, index int
 			color = p.danger
 		}
 		ui.Text(c, line.Text).FontSize(10.5).TextColor(color)
+	case "relay":
+		// A message that went from this session to another one, or came
+		// from it.
+		ui.Row(c).FillWidth().Gap(6).AlignItems(ui.Start).Children(func() {
+			ui.Box(c).Width(2).FillHeight().Background(p.edge).Shrink(0)
+			ui.Text(c, line.Text).FontSize(10.5).TextColor(p.muted).Grow(1).MinWidth(0)
+		})
 	case "tool":
 		a.agentToolView(c, p, line)
 	case "thought":
@@ -1365,32 +1795,61 @@ func permissionCommand(raw json.RawMessage) string {
 // selectors, the words, and the send that ends them. The send and the stop
 // are one button inside the box, whose mark says which it is.
 func (a *app) agentComposer(c *ui.Context, p palette) {
+	// A child session the agent opened is its own: the panel shows what
+	// happens there, and the user does not write in it.
+	if tab := a.chatActive(); tab != nil && tab.subagent {
+		a.agentSubagentComposer(c, p, tab)
+		return
+	}
 	ui.Column(c).FillWidth().Padding(8).Gap(4).Children(func() {
 		if len(a.agentConfig) > 0 || len(a.agentModes) > 0 {
 			a.agentConfigBar(c, p)
 		}
+		a.agentUsageView(c, p)
+		a.agentQueueChips(c, p)
 		a.agentRefChips(c, p)
 		// The box sits in a box of its own, so that the button can float
 		// in its corner: two lines to write in, up to six as the words
-		// grow, with room on the right for the button.
+		// grow, with room on the right for the button. Pictures pasted
+		// into it, or dropped on it, ride with the message.
 		var input ui.Element
-		ui.Box(c).FillWidth().Children(func() {
+		box := ui.Box(c).FillWidth()
+		box.Children(func() {
 			input = ui.TextArea(c, &a.agentInput).FillWidth().Lines(2, 6).MinHeight(46).
 				Padding(6, 40, 6, 8).Placeholder("询问 Agent… @ 引用文件 / 使用命令").Label("Agent 输入")
+			input.OnPaste(func(text string) bool {
+				data := c.Services().ReadClipboardData(transfer.PNG)
+				if len(data.Items()) == 0 {
+					return false
+				}
+				png, err := data.Read(transfer.PNG)
+				if err != nil || len(png) == 0 {
+					return false
+				}
+				a.update(func() { a.addAgentImage(png, "剪贴板图片") })
+				return true
+			})
 			input.OnTextKey(func(k ui.TextKey) bool {
-				// Enter sends; Shift+Enter breaks the line.
-				if k.Key != ui.KeyEnter || k.Mods != 0 || a.agentBusy {
+				// Enter sends, or joins the queue while the agent works;
+				// Shift+Enter breaks the line.
+				if k.Key != ui.KeyEnter || k.Mods != 0 {
 					return false
 				}
 				text := k.Text()
 				a.sendAgentText(text)
-				if strings.TrimSpace(text) != "" && a.agentConn != nil {
+				if (strings.TrimSpace(text) != "" || len(a.agentRefs) > 0) && a.agentConn != nil {
 					k.SetText("")
 				}
 				return true
 			})
 			a.agentSendButton(c, p)
 		})
+		if files := box.DroppedFiles(); len(files) > 0 {
+			a.attachAgentImages(files)
+		}
+		if box.FileDragOver() {
+			box.Border(1, p.accent)
+		}
 		_, caret := input.TextSelection()
 		a.agentCaret = caret
 		if a.agentCaretPending >= 0 {
@@ -1400,13 +1859,40 @@ func (a *app) agentComposer(c *ui.Context, p palette) {
 		}
 		a.updateAgentToken()
 		a.agentCompletion(c, p)
-		hint := "Enter 发送 · Shift+Enter 换行 · @ 引用文件 · / 命令"
+		hint := "Enter 发送 · Shift+Enter 换行 · @ 引用文件 · / 命令 · 粘贴图片"
 		if a.agentConn == nil {
 			hint = "先启动 Agent 才能发送"
 		} else if a.agentBusy {
-			hint = "正在工作… 点右下角停止"
+			hint = "正在工作… Enter 加入队列 · 点右下角停止"
+			if len(a.agentQueue) > 0 {
+				hint = "正在工作… 队列里的消息在完成后依次发送"
+			}
 		}
 		ui.Text(c, hint).FontSize(9.5).TextColor(p.muted).SingleLine().Ellipsis("…")
+	})
+}
+
+// agentSubagentComposer is what stands in for the box of a child session:
+// the child works on what the main agent asked it, and the panel only
+// shows how it goes.
+func (a *app) agentSubagentComposer(c *ui.Context, p palette, tab *chatTab) {
+	state := "空闲"
+	switch strings.ToLower(tab.subState) {
+	case "running":
+		state = "工作中"
+	case "requires_action":
+		state = "等待主 Agent"
+	case "idle":
+		state = "空闲"
+	}
+	ui.Column(c).FillWidth().Padding(10, 8).Gap(4).Background(p.wash).Radius(6).Children(func() {
+		ui.Row(c).FillWidth().Gap(6).AlignItems(ui.Center).Children(func() {
+			ui.Icon(c, branchIcon).Size(12, 12).TextColor(p.warn)
+			ui.Text(c, "子 Agent 会话").FontSize(10.5).FontWeight(650).TextColor(p.text)
+			ui.Box(c).Grow(1)
+			ui.Text(c, state).FontSize(9.5).TextColor(p.muted)
+		})
+		ui.Text(c, "这个会话由主 Agent 驱动，这里只看它做了什么。").FontSize(9.5).TextColor(p.muted)
 	})
 }
 
@@ -1414,7 +1900,7 @@ func (a *app) agentComposer(c *ui.Context, p palette) {
 // that runs: one button, whose mark says which it is.
 func (a *app) agentSendButton(c *ui.Context, p palette) {
 	busy := a.agentBusy
-	ready := a.agentConn != nil && strings.TrimSpace(a.agentInput) != ""
+	ready := a.agentConn != nil && (strings.TrimSpace(a.agentInput) != "" || len(a.agentRefs) > 0)
 	enabled := busy || ready
 	icon, tip := arrowUpIcon, "发送"
 	if busy {

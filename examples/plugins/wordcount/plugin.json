@@ -1,0 +1,14 @@
+{
+  "name": "wordcount",
+  "version": "0.1.0",
+  "description": "数一数当前文件里有多少词、多少行、多少字。",
+  "api": 1,
+  "runtime": "js",
+  "main": "plugin.js",
+  "capabilities": ["editor", "notify"],
+  "contributes": {
+    "commands": [
+      { "id": "wordcount", "title": "统计字数", "hint": "数一数当前文件" }
+    ]
+  }
+}

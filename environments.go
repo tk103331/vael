@@ -124,6 +124,9 @@ func environmentIcon(kind string) *ui.SVG {
 // environmentsSettings is the remote environments the editor opens
 // projects in: those it saved, and the projects it opened lately.
 func (a *app) environmentsSettings(c *ui.Context, p palette) {
+	if !a.settingsCustomAllowed(settingsEnv) {
+		return
+	}
 	ui.Column(c).FillWidth().Gap(10).Children(func() {
 		ui.Text(c, "SSH、WSL 或 Docker：核心在目标环境里运行，文件、命令与终端都在那边。").
 			FontSize(10.5).TextColor(p.muted)

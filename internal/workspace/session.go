@@ -40,6 +40,9 @@ type Session struct {
 	// FontFamily is the family of the editor's text; the system's
 	// monospaced one when empty.
 	FontFamily string
+	// ActivitySize is how big the icons of the activity bars are, in
+	// DIPs; zero means the default.
+	ActivitySize float32
 	// Minimap is whether the editor shows the minimap beside it; nil for
 	// the default, which is to show it.
 	Minimap *bool
@@ -49,6 +52,9 @@ type Session struct {
 	TrimOnSave   bool
 	FinalNewline bool
 	FormatOnSave bool
+	// NoNotify turns off the desktop notification that says an agent
+	// finished a turn while the window was not in front.
+	NoNotify bool
 }
 
 func SessionPath() (string, error) {

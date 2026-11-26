@@ -44,10 +44,14 @@ type acpInitialize struct {
 	ProtocolVersion   int `json:"protocolVersion"`
 	AgentCapabilities struct {
 		LoadSession bool `json:"loadSession"`
+		// Session is the fork capability of the agent: `session: {fork: {}}`
+		// in the session/fork RFD.
+		Session json.RawMessage `json:"session"`
 		// SessionCapabilities.list is an empty object when the agent
 		// supports listing its sessions.
 		SessionCapabilities struct {
 			List json.RawMessage `json:"list"`
+			Fork json.RawMessage `json:"fork"`
 		} `json:"sessionCapabilities"`
 	} `json:"agentCapabilities"`
 	AgentInfo struct {
@@ -193,6 +197,32 @@ func (i acpInitialize) canListSessions() bool {
 	return raw != "" && raw != "null"
 }
 
+// canForkSessions tells whether the agent said it can fork a session. The
+// RFD puts the capability at `session.fork`; an agent that puts it with
+// its other session capabilities works too.
+// https://agentclientprotocol.com/rfds/session-fork
+func (i acpInitialize) canForkSessions() bool {
+	hasFork := func(raw json.RawMessage) bool {
+		value := strings.TrimSpace(string(raw))
+		if value == "" || value == "null" || value == "{}" {
+			return false
+		}
+		var body struct {
+			Fork json.RawMessage `json:"fork"`
+		}
+		if json.Unmarshal([]byte(value), &body) != nil {
+			return false
+		}
+		flag := strings.TrimSpace(string(body.Fork))
+		return flag != "" && flag != "null"
+	}
+	if hasFork(i.AgentCapabilities.Session) {
+		return true
+	}
+	flag := strings.TrimSpace(string(i.AgentCapabilities.SessionCapabilities.Fork))
+	return flag != "" && flag != "null"
+}
+
 // acpPromptResult is how a turn of the conversation ended.
 type acpPromptResult struct {
 	StopReason string `json:"stopReason"`
@@ -267,12 +297,14 @@ type acpUpdate struct {
 		// Entries are the plan's lines, when the update is a plan.
 		Entries []acpPlanEntry `json:"entries"`
 		// The tool a tool call is about.
-		ToolCallID string        `json:"toolCallId"`
-		Title      string        `json:"title"`
-		Kind       string        `json:"kind"`
-		Status     string        `json:"status"`
-		Locations  []acpLocation `json:"locations"`
-		RawInput   any           `json:"rawInput"`
+		ToolCallID string `json:"toolCallId"`
+		// Title names a tool call, or the session when the agent gives it
+		// a new name as the conversation moves on.
+		Title     string        `json:"title"`
+		Kind      string        `json:"kind"`
+		Status    string        `json:"status"`
+		Locations []acpLocation `json:"locations"`
+		RawInput  any           `json:"rawInput"`
 		// The mode the agent works in, when the update says it.
 		CurrentModeID string `json:"currentModeId"`
 		// ConfigOptions are the session's selectors, as the agent changes
@@ -280,7 +312,50 @@ type acpUpdate struct {
 		ConfigOptions []acpConfigOption `json:"configOptions"`
 		// AvailableCommands are the slash commands the session offers.
 		AvailableCommands []acpAvailableCommand `json:"availableCommands"`
+		// UpdatedAt is when the session changed its name or metadata.
+		UpdatedAt string `json:"updatedAt"`
+		// Description is what a notice or a subagent says of itself.
+		Description string `json:"description"`
+		// Severity is how a notice wants to be shown.
+		Severity string `json:"severity"`
+		// CompactionID names a context compaction, and Summary is what
+		// it kept of the conversation.
+		CompactionID string       `json:"compactionId"`
+		Summary      []acpContent `json:"summary"`
+		// Plan is the plan the agent keeps, and PlanID the one a removal
+		// talks about.
+		Plan   *acpPlan `json:"plan"`
+		PlanID string   `json:"planId"`
+		// SessionID is the child session of a subagent update, and State
+		// what that child is doing.
+		SessionID string `json:"sessionId"`
+		State     string `json:"state"`
+		// MessageID, SenderSessionID and RecipientSessionID are about a
+		// message between two sessions.
+		MessageID          string `json:"messageId"`
+		SenderSessionID    string `json:"senderSessionId"`
+		RecipientSessionID string `json:"recipientSessionId"`
+		// Used and Size are the context window the session has filled and
+		// the one it has, in tokens; Cost is what it has spent so far.
+		// https://agentclientprotocol.com/protocol/v1/prompt-turn#session-usage-updates
+		Used int64    `json:"used"`
+		Size int64    `json:"size"`
+		Cost *acpCost `json:"cost"`
 	} `json:"update"`
+}
+
+// acpCost is the cumulative cost of a session.
+type acpCost struct {
+	Amount   float64 `json:"amount"`
+	Currency string  `json:"currency"`
+}
+
+// acpPlan is the plan an agent keeps for its work, either as entries or
+// as Markdown.
+type acpPlan struct {
+	Type     string         `json:"type"`
+	Entries  []acpPlanEntry `json:"entries"`
+	Markdown string         `json:"markdown"`
 }
 
 // Words reads the block of a message update.

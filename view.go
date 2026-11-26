@@ -53,6 +53,9 @@ var tagIcon = lineIcon(`<path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2
 var arrowUpIcon = lineIcon(`<line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/>`)
 var arrowDownIcon = lineIcon(`<line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/>`)
 var starIcon = solidIcon(`<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>`)
+var pinIcon = lineIcon(`<path d="M9 3h6l-1 5 4 4H6l4-4z"/><line x1="12" y1="12" x2="12" y2="21"/>`)
+var puzzleIcon = lineIcon(`<path d="M9 3h6v3h3v6h-3v3H9v-3H6V6h3z"/>`)
+var infoIcon = lineIcon(`<circle cx="12" cy="12" r="9"/><line x1="12" y1="11" x2="12" y2="17"/><line x1="12" y1="7.5" x2="12.01" y2="7.5"/>`)
 var pencilIcon = lineIcon(`<path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/>`)
 var playIcon = lineIcon(`<polygon points="6 4 20 12 6 20 6 4"/>`)
 var stopIcon = lineIcon(`<rect x="6" y="6" width="12" height="12" rx="2"/>`)
@@ -87,7 +90,7 @@ var symbolsIcon = lineIcon(`<circle cx="12" cy="12" r="3"/><path d="M12 2v3m0 14
 
 func (a *app) activityView(c *ui.Context, p palette) {
 	// As wide as the strip of the tool window at the bottom.
-	ui.Column(c).Width(34).Shrink(0).FillHeight().Padding(6, 2).Gap(4).Border(1, p.edge).Children(func() {
+	ui.Column(c).Width(float32(a.activitySize)+6).Shrink(0).FillHeight().Padding(6, 2).Gap(4).Border(1, p.edge).Children(func() {
 		for _, item := range panelsAt(panelLeft) {
 			item := item
 			active := a.sidebar && a.section == item.ID
@@ -110,7 +113,7 @@ func (a *app) activityView(c *ui.Context, p palette) {
 		// what each of them does, as an IDE's status widget does.
 		ui.Spacer(c)
 		running, problems := a.lspTotals()
-		lsp := ui.ButtonBase(c).Size(28, 28).Radius(5).Center().Label("语言服务器")
+		lsp := ui.ButtonBase(c).Size(float32(a.activitySize), float32(a.activitySize)).Radius(5).Center().Label("语言服务器")
 		if a.lspMenuOpen {
 			lsp.Background(p.selected)
 		} else if lsp.Hovered() {
@@ -140,7 +143,7 @@ func (a *app) activityView(c *ui.Context, p palette) {
 // panelButton is a button of a bar of the window: the icon of a panel,
 // what it counts, and what it says on hover.
 func (a *app) panelButton(c *ui.Context, p palette, item panel, active bool, fn func()) {
-	b := ui.ButtonBase(c).Size(28, 28).Radius(5).Center().Label(item.Tip)
+	b := ui.ButtonBase(c).Size(float32(a.activitySize), float32(a.activitySize)).Radius(5).Center().Label(item.Tip)
 	color := p.muted
 	if active {
 		b.Background(p.selected)
@@ -168,7 +171,7 @@ func (a *app) panelButton(c *ui.Context, p palette, item panel, active bool, fn 
 // holds, as the bar on the left holds the tools of the project.
 func (a *app) rightBar(c *ui.Context, p palette) {
 	// As wide as the strip of the tool window at the bottom.
-	ui.Column(c).Width(34).Shrink(0).FillHeight().Padding(6, 2).Gap(4).Border(1, p.edge).Children(func() {
+	ui.Column(c).Width(float32(a.activitySize)+6).Shrink(0).FillHeight().Padding(6, 2).Gap(4).Border(1, p.edge).Children(func() {
 		for _, item := range panelsAt(panelRight) {
 			item := item
 			active := a.rightPanel && a.rightSection == item.ID
@@ -389,7 +392,10 @@ func (a *app) editorTab(c *ui.Context, p palette, pane, i int, tab *fileTab) {
 		} else {
 			ui.Icon(c, fileIcon).Size(12, 12).TextColor(fg)
 		}
-		ui.Text(c, name).FontSize(12).TextColor(p.text).MaxWidth(180).SingleLine().Ellipsis("…")
+		title := ui.Text(c, name).FontSize(12).TextColor(p.text).MaxWidth(180).SingleLine().Ellipsis("…")
+		if tab.preview {
+			title.Italic()
+		}
 		if tab.state != nil && tab.state.Buffer.Modified() {
 			ui.Text(c, "●").FontSize(8).TextColor(p.accent)
 		}
@@ -405,7 +411,14 @@ func (a *app) editorTab(c *ui.Context, p palette, pane, i int, tab *fileTab) {
 		}
 	})
 	// The tooltip says where the file is, or what the conversation is.
-	b.Tooltip(tab.path)
+	tip := tab.path
+	if tab.preview {
+		tip += " · 预览：双击标签页固定"
+	}
+	b.Tooltip(tip)
+	if b.DoubleClicked() {
+		tab.preview = false
+	}
 	if b.Clicked() {
 		a.focusPaneOn(pane)
 		a.focusTab(i)
@@ -435,6 +448,9 @@ func quietRow(c *ui.Context, text string, selected bool, p palette) ui.Element {
 func (a *app) view(c *ui.Context) {
 	p := a.colors()
 	c.SetTheme(a.editorTheme())
+	// An edit pins the preview a single click opened, before the tabs
+	// show it as one.
+	a.pinPreviews()
 	// Opening the agent's panel starts the agent chosen last, so that
 	// the conversation is ready to use.
 	panelAgent := a.rightPanel && a.rightSection == "agent"
@@ -818,14 +834,17 @@ func (a *app) tree(c *ui.Context, p palette, dir string, depth int, width float3
 				mygo.Clipboard.WriteText(e.Path)
 			}
 		})
-		if row.Clicked() {
+		if row.DoubleClicked() && !e.Dir {
+			// A double click takes the file for good, out of preview.
+			a.openFile(e.Path)
+		} else if row.Clicked() {
 			if e.Dir {
 				a.expanded[e.Path] = !a.expanded[e.Path]
 				if a.expanded[e.Path] {
 					a.loadDir(e.Path)
 				}
 			} else {
-				a.openFile(e.Path)
+				a.openPreview(e.Path)
 			}
 		}
 		if e.Dir && a.expanded[e.Path] {
@@ -925,6 +944,11 @@ func (a *app) editorTabStrip(c *ui.Context, p palette, pane int) {
 			})
 		})
 		ui.Row(c).Padding(0, 6).Gap(2).AlignItems(ui.Center).Children(func() {
+			if pane == 0 {
+				if iconButton(c, plusIcon, "新建文件", false, p) {
+					a.prompt = &namePrompt{}
+				}
+			}
 			if pane == 1 {
 				if iconButton(c, xIcon, "取消拆分", false, p) {
 					a.splitEditor()
@@ -989,7 +1013,7 @@ func (a *app) styleEditor(st *editor.State) {
 // bottomStrip is the bar on the left of the tool window at the bottom: its
 // own buttons choose the panel, as an IDE's stripe.
 func (a *app) bottomStrip(c *ui.Context, p palette) {
-	ui.Column(c).Width(34).Shrink(0).FillHeight().Padding(6, 2).Gap(2).Children(func() {
+	ui.Column(c).Width(float32(a.activitySize)+6).Shrink(0).FillHeight().Padding(6, 2).Gap(2).Children(func() {
 		for _, item := range panelsAt(panelBottom) {
 			item := item
 			active := a.bottomTab == item.ID
@@ -1244,6 +1268,32 @@ func (a *app) dialogs(c *ui.Context, p palette) {
 			a.prompt = nil
 		}
 	}
+	if a.chatRename != nil {
+		open := true
+		rename := a.chatRename
+		ui.Modal(c, &open, func() {
+			ui.Column(c).Width(400).Padding(22).Gap(16).Children(func() {
+				ui.Text(c, "重命名对话").FontSize(17).FontWeight(650)
+				ui.Text(c, "名字只保存在 Vael 里，Agent 之后改的标题不会覆盖它。").FontSize(12).TextColor(p.muted)
+				input := ui.TextInput(c, &rename.value).FillWidth().Placeholder("名称").AutoFocus()
+				submitted := input.Submitted()
+				ui.Row(c).FillWidth().Gap(8).Children(func() {
+					ui.Spacer(c)
+					if ui.Button(c, "取消").Clicked() {
+						open = false
+					}
+					if ui.PrimaryButton(c, "保存").Clicked() || submitted {
+						a.renameChat()
+						open = false
+					}
+				})
+			})
+		})
+		if !open {
+			a.chatRename = nil
+		}
+	}
+	a.pluginInstallDialog(c, p)
 	if a.branchFrom != "" {
 		open := true
 		from := a.branchFrom

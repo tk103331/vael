@@ -17,7 +17,17 @@ type chatTab struct {
 	id      string
 	title   string
 	updated string
-	state   chatState
+	// titled says the title is the session's own, from the agent or from
+	// the user's rename; the panel then leaves it alone.
+	titled bool
+	// renamed says the user named it, so the agent's title does not
+	// replace it.
+	renamed bool
+	// subagent says this tab is the child session the agent opened, and
+	// subState what that child is doing.
+	subagent bool
+	subState string
+	state    chatState
 }
 
 type chatState struct {
@@ -40,6 +50,11 @@ type chatState struct {
 	loading                     bool
 	commands                    []acpAvailableCommand
 	refs                        []agentRef
+	queue                       []agentQueued
+	used, size                  int64
+	cost                        float64
+	costCurrency                string
+	usageWarned                 bool
 	command                     string
 	mentionOpen                 bool
 	mentionQuery                string
@@ -78,7 +93,13 @@ func (a *app) chatState() chatState {
 		historyErr: a.agentHistoryErr, optionOpen: a.agentOptionOpen,
 		scroll: a.agentScroll, allowed: a.agentAllowed, denied: a.agentDenied,
 		loading: a.agentLoading, commands: a.agentCommands, refs: a.agentRefs,
-		command: a.agentCommand, mentionOpen: a.agentMentionOpen,
+		queue:        a.agentQueue,
+		used:         a.agentUsed,
+		size:         a.agentSize,
+		cost:         a.agentCost,
+		costCurrency: a.agentCostCurrency,
+		usageWarned:  a.agentUsageWarned,
+		command:      a.agentCommand, mentionOpen: a.agentMentionOpen,
 		mentionQuery: a.agentMentionQuery, mentionDir: a.agentMentionDir,
 		dismissed: a.agentMentionDismissed, caret: a.agentCaret,
 		caretPending: a.agentCaretPending,
@@ -94,6 +115,9 @@ func (a *app) setChatState(s chatState) {
 	a.agentHistoryErr, a.agentOptionOpen, a.agentScroll = s.historyErr, s.optionOpen, s.scroll
 	a.agentAllowed, a.agentDenied, a.agentLoading = s.allowed, s.denied, s.loading
 	a.agentCommands, a.agentRefs, a.agentCommand = s.commands, s.refs, s.command
+	a.agentQueue = s.queue
+	a.agentUsed, a.agentSize = s.used, s.size
+	a.agentCost, a.agentCostCurrency, a.agentUsageWarned = s.cost, s.costCurrency, s.usageWarned
 	a.agentMentionOpen, a.agentMentionQuery, a.agentMentionDir = s.mentionOpen, s.mentionQuery, s.mentionDir
 	a.agentMentionDismissed, a.agentCaret, a.agentCaretPending = s.dismissed, s.caret, s.caretPending
 }
@@ -118,6 +142,10 @@ func (a *app) chatTitleOf(tab *chatTab) string {
 
 func (a *app) chatSyncTitle() {
 	tab := a.chatActive()
+	if tab.titled {
+		tab.updated = time.Now().Format(time.RFC3339)
+		return
+	}
 	for i := len(a.agentLines) - 1; i >= 0; i-- {
 		if a.agentLines[i].Kind != "you" {
 			continue
@@ -175,8 +203,14 @@ func (a *app) agentChatTabs(c *ui.Context, p palette) {
 				}
 				b.Children(func() {
 					ui.Icon(c, a.agentLogo()).Size(11, 11).Shrink(0).TextColor(p.accent)
+					if tab.subagent {
+						ui.Icon(c, branchIcon).Size(9, 9).Shrink(0).TextColor(p.warn)
+					}
 					ui.Text(c, tab.title).FontSize(10.5).TextColor(p.text).Grow(1).
 						MinWidth(0).SingleLine().Ellipsis("…")
+					if a.chatMetaOf(tab.state.session).Pinned {
+						ui.Icon(c, pinIcon).Size(8, 8).Shrink(0).TextColor(p.warn)
+					}
 					close := ui.ButtonBase(c).Size(14, 14).Shrink(0).Radius(3).Center().
 						Label("关闭对话 " + tab.title)
 					if close.Hovered() {
@@ -188,6 +222,28 @@ func (a *app) agentChatTabs(c *ui.Context, p palette) {
 					}
 				})
 				b.Tooltip(tab.title)
+				b.ContextMenu(func(m *ui.Menu) {
+					if m.Item("重命名对话…").Chosen() {
+						a.chatRename = &chatRenamePrompt{tab: tab, session: tab.state.session, value: tab.title}
+					}
+					if a.agentCanFork && tab.state.session != "" {
+						if m.Item("分叉对话…").Chosen() {
+							a.forkAgentSession(tab.state.session)
+						}
+					}
+					if session := tab.state.session; session != "" {
+						label := "置顶对话"
+						if a.chatMetaOf(session).Pinned {
+							label = "取消置顶"
+						}
+						if m.Item(label).Chosen() {
+							a.toggleChatPin(session)
+						}
+					}
+					if m.Item("关闭对话").Chosen() {
+						a.chatClose(i)
+					}
+				})
 				if b.Clicked() {
 					a.chatSelect(i)
 				}
@@ -213,6 +269,35 @@ func (a *app) chatIndexOf(chat *chatTab) int {
 		}
 	}
 	return -1
+}
+
+// renameChat gives a conversation the name the user typed; the agent's
+// own title updates do not replace it, and the name is kept with the
+// session for the history.
+func (a *app) renameChat() {
+	prompt := a.chatRename
+	if prompt == nil {
+		return
+	}
+	defer func() { a.chatRename = nil }()
+	title := strings.TrimSpace(prompt.value)
+	if title == "" {
+		return
+	}
+	session := prompt.session
+	if prompt.tab != nil && a.chatIndexOf(prompt.tab) >= 0 {
+		if session == "" {
+			session = prompt.tab.state.session
+		}
+		prompt.tab.title, prompt.tab.titled, prompt.tab.renamed = title, true, true
+	} else if tab := a.chatForSession(session); tab != nil {
+		tab.title, tab.titled, tab.renamed = title, true, true
+	}
+	if session != "" {
+		meta := a.chatMetaOf(session)
+		meta.Title = title
+		a.setChatMeta(session, meta)
+	}
 }
 
 func blankChatState() chatState {
@@ -283,8 +368,15 @@ func (a *app) chatWithTab(tab *chatTab, fn func()) {
 			break
 		}
 	}
-	if target < 0 || target == from {
+	if target < 0 {
 		fn()
+		return
+	}
+	if target == from {
+		// The tab is the one that is showing: what the answer changed is
+		// kept, so that the session it belongs to is written down.
+		fn()
+		a.chatSave()
 		return
 	}
 	a.chatSave()

@@ -80,6 +80,12 @@ func TestTheCodeActionsListAndApply(t *testing.T) {
 	pumpUntil(t, queue, func() bool {
 		return strings.Contains(tab.state.Buffer.String(), "func println() {")
 	})
+	// The fix saves the file as well; wait for the write so that the
+	// temporary project is not removed while it is still in flight.
+	pumpUntil(t, queue, func() bool {
+		data, err := os.ReadFile(path)
+		return err == nil && strings.Contains(string(data), "func println() {")
+	})
 	if a.actions != nil {
 		t.Fatal("the list did not close")
 	}

@@ -79,6 +79,12 @@ var panels = []panel{
 		Position: panelRight, Hidden: true, View: (*app).pluginDemoPanel,
 	},
 	{
+		// A panel of a plugin that really runs: the tree it asked for in
+		// its last answer.
+		ID: "plugin", Name: "插件", Title: "插件",
+		Position: panelRight, Hidden: true, View: (*app).pluginPanel,
+	},
+	{
 		ID: "terminal", Name: "终端", Tip: "面板：终端", Icon: terminalIcon, Position: panelBottom,
 		Header: (*app).terminalHeader, View: (*app).terminalView,
 	},
